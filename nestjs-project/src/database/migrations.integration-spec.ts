@@ -14,13 +14,27 @@ const MANAGED_TABLES = [
   'verification_tokens',
 ];
 
+// Dedicated database: the migration runner never touches the shared test DB,
+// so the suite is idempotent and order-independent (tables, enums and the
+// `migrations` table all disappear with the database).
+const MIGRATIONS_TEST_DB = 'streamtube_migrations_test';
+
 describe('Database migrations (integration)', () => {
+  let adminDataSource: DataSource;
   let dataSource: DataSource;
 
   beforeAll(async () => {
+    adminDataSource = createTestDataSource([], { synchronize: false });
+    await adminDataSource.initialize();
+    await adminDataSource.query(
+      `DROP DATABASE IF EXISTS "${MIGRATIONS_TEST_DB}" WITH (FORCE)`,
+    );
+    await adminDataSource.query(`CREATE DATABASE "${MIGRATIONS_TEST_DB}"`);
+
     dataSource = createTestDataSource(
       [User, Channel, RefreshToken, VerificationToken],
       {
+        database: MIGRATIONS_TEST_DB,
         synchronize: false,
         migrations: [
           CreateUsersAndChannels1775687773260,
@@ -28,22 +42,15 @@ describe('Database migrations (integration)', () => {
         ],
       },
     );
-
     await dataSource.initialize();
-
-    await Promise.all([
-      ...MANAGED_TABLES.map((table) =>
-        dataSource.query(`DROP TABLE IF EXISTS "${table}" CASCADE`),
-      ),
-      dataSource.query(`DROP TABLE IF EXISTS "migrations" CASCADE`),
-    ]);
   });
 
   afterAll(async () => {
-    // The second test undoes the last migration, leaving token tables missing.
-    // Re-apply so the shared DB is fully migrated when subsequent suites run.
-    await dataSource.runMigrations();
-    await dataSource.destroy();
+    await dataSource?.destroy();
+    await adminDataSource.query(
+      `DROP DATABASE IF EXISTS "${MIGRATIONS_TEST_DB}" WITH (FORCE)`,
+    );
+    await adminDataSource.destroy();
   });
 
   it('should apply all migrations and create all four tables', async () => {
@@ -77,5 +84,10 @@ describe('Database migrations (integration)', () => {
       [['refresh_tokens', 'verification_tokens']],
     );
     expect(result).toHaveLength(0);
+
+    const enums = await dataSource.query<{ typname: string }[]>(
+      `SELECT typname FROM pg_type WHERE typname = 'verification_tokens_type_enum'`,
+    );
+    expect(enums).toHaveLength(0);
   });
 });
