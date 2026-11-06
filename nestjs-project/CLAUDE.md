@@ -120,7 +120,7 @@ docker compose exec nestjs-api npm run test:e2e -- --runInBand
 docker compose up -d video-worker       # confirm with `docker compose ps`
 ```
 
-Integration/e2e tests use the real Compose services (`db`, `redis`, `minio`, `ffmpeg`): each suite creates its own bucket (`test-<uuid>`) and queue prefix, and the `test/video-pipeline.e2e-spec.ts` runs `AppModule` and `WorkerModule` in the same process. `@nestjs/bullmq` and `@nestjs/bull-shared` are ESM-only, so the Jest configs (`package.json` and `test/jest-e2e.json`) keep a restricted `transformIgnorePatterns` + `transform` for these two packages — do not remove them.
+Integration/e2e tests use the real Compose services (`db`, `redis`, `minio`, `ffmpeg`): suites that use storage or the queue create their own bucket (`test-<uuid>`) and queue prefix, and the `test/video-pipeline.e2e-spec.ts` runs `AppModule` and `WorkerModule` in the same process. `@nestjs/bullmq` and `@nestjs/bull-shared` are ESM-only, so the Jest configs (`package.json` and `test/jest-e2e.json`) keep a restricted `transformIgnorePatterns` + `transform` for these two packages — do not remove them.
 
 During active development, run only the tests related to the file being changed (`npm test -- path/to/file.spec.ts`). Before declaring a task done, run the full suite — see the global `CLAUDE.md` → "Definition of Done (Technical)".
 
@@ -192,7 +192,7 @@ Defined in `.env.example` and validated by Joi in `src/config/env.validation.ts`
 ## Video Pipeline
 
 - API (`src/videos`): `POST /videos` creates the draft and opens an S3 multipart upload; the client PUTs parts straight to the storage using presigned URLs; `POST /videos/:id/upload/complete` checks the object size, moves the video to `processing` and enqueues a `video.process` job (`jobId = process-video-<uuid>`, 3 attempts, exponential backoff) on the `video-processing` BullMQ queue. `stream`/`download` are public `302` redirects to presigned `GetObject` URLs of `ready` videos.
-- Worker (`src/worker.ts` → `WorkerModule`): the **only** module with `@Processor`s — the API process never consumes jobs. It runs `ffprobe` (duration and metadata) and `ffmpeg` (thumbnail) and sets the video to `ready` or `error` (`UNREADABLE_MEDIA`, `THUMBNAIL_FAILED`, `PROCESSING_FAILED`). A job scheduler on the `video-maintenance` queue runs the sweeper every `SWEEPER_INTERVAL_MS`.
+- Worker (`src/worker.ts` → `WorkerModule`): the **only** module with `@Processor`s — the API process never consumes jobs. It runs `ffprobe` (duration and metadata) and `ffmpeg` (thumbnail) and sets the video to `ready` or `error` (`error_code`: `UNREADABLE_MEDIA`, `NO_VIDEO_STREAM`, `THUMBNAIL_FAILED`, `PROCESSING_FAILED`). A job scheduler on the `video-maintenance` queue runs the sweeper every `SWEEPER_INTERVAL_MS`.
 - Storage keys: `videos/<uuid>/original` and `videos/<uuid>/thumbnail.jpg`.
 
 ## Build Assets

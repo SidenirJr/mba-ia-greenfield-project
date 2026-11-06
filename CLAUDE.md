@@ -24,6 +24,7 @@ See `docs/diagrams/software-arch.mermaid` for the full diagram. Key containers:
 - **Database** (PostgreSQL) → users, channels, videos, comments, likes
 - **Object Storage** (S3-compatible) → video files and thumbnails. Runs as the Compose service `minio` using the `pgsty/silo` image (a maintained fork of MinIO, whose upstream was archived), with `minio-init` (`pgsty/mc`) creating the bucket and its CORS. This fork satisfies the "S3/MinIO" requirement of the project statement; the API talks S3 through the AWS SDK v3, so any S3-compatible engine works.
 - **Message Queue** → BullMQ on Redis (Compose service `redis`, not published on the host). Queues `video-processing` (jobs `video.process`) and `video-maintenance` (sweeper scheduler)
+- **Email Service** (SMTP) → account confirmation and password recovery
 
 ## Videos Module (Phase 03)
 
@@ -42,8 +43,7 @@ Endpoints (`nestjs-project/src/videos/videos.controller.ts`):
 | `GET /videos/:id/stream` | Public | 302 | Redirect to the presigned `GetObject` URL (only `ready` videos) |
 | `GET /videos/:id/download` | Public | 302 | Same, forcing `Content-Disposition: attachment` |
 
-Errors follow the `ApiErrorEnvelope` (`VIDEO_NOT_FOUND`, `UPLOAD_EXPIRED`, `UPLOAD_SIZE_MISMATCH`, `UNREADABLE_MEDIA`, etc.); the contract is versioned in `nestjs-project/openapi.json` (`npm run openapi:export`). Infrastructure details, env vars and test rules are in `nestjs-project/CLAUDE.md`.
-- **Email Service** (SMTP) → account confirmation and password recovery
+HTTP errors follow the `ApiErrorEnvelope` (`VIDEO_NOT_FOUND`, `UPLOAD_EXPIRED`, `UPLOAD_SIZE_MISMATCH`, etc.); processing failures are stored on the video as `error_code` and read via `GET /videos/:id`; the contract is versioned in `nestjs-project/openapi.json` (`npm run openapi:export`). Infrastructure details, env vars and test rules are in `nestjs-project/CLAUDE.md`.
 
 ## Docker Networking
 
