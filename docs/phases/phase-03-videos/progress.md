@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 21/31 completed
+**SIs:** 22/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -181,9 +181,13 @@
   - `VideosModule` registra e exporta `VideoPipelineService`; sem mudança nos specs existentes.
 
 ### SI-03.22 — VideoProcessingService: metadados, thumbnail e transição para ready/error
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 18 novos passing (video-processing.service.spec 10, video-processing.service.integration-spec 8 com DB, storage e ffmpeg reais); src/media + src/test regressão 35/35 (+2 casos no classificador); tsc exit 0; lint exit 0
+- **Observations:**
+  - **Flakiness achada e corrigida (fixture do SI-03.19):** `generateCorruptFile` usava 4 KiB aleatórios; em ~metade das execuções o ffprobe os detecta como stream MP3 e, lido por HTTP, falha com `Failed to read frame size: Could not seek` em vez de `Invalid data found`, o que o classificador tratava como TRANSIENT. Correção: o fixture passou a ser texto fixo (determinístico, ffprobe sempre responde `Invalid data found`) e o classificador do SI-03.20 ganhou os padrões `invalid frame size`/`failed to read frame size`/`header missing` (mídia que o demuxer aceita e depois rejeita), com 2 casos novos no unit. 8 execuções seguidas estáveis.
+  - Falha do `putObject` da thumbnail (storage inacessível) é tratada como transitória: propaga o erro cru, vídeo permanece `processing` (o catálogo diz "frame extraction/upload fails", mas o plano exige que storage inacessível seja retryable e `THUMBNAIL_FAILED` só para falha de extração do ffmpeg).
+  - TTL da URL interna = `ceil(FFMPEG_TIMEOUT_MS/1000) * 2 + 60` s (probe e thumbnail, cada um até o timeout, mais folga), sempre ≥ `FFMPEG_TIMEOUT_MS`.
+  - `VideoProcessingService` só conhece `VideoPipelineService` (nunca o repositório); o spec de integração monta o módulo com `VideosModule`, `StorageModule` e `MediaModule` (o `WorkerModule` do SI-03.23 importará os mesmos).
 
 ### SI-03.23 — WorkerModule e VideoProcessingProcessor (retries, backoff e falha final)
 - **Status:** pending

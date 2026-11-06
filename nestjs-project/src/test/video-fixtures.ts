@@ -1,5 +1,4 @@
 import { execFile } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -89,10 +88,11 @@ export function generateNonFaststartMp4(): Promise<string> {
   return generateSampleVideo({ faststart: false });
 }
 
-// Bytes aleatórios com extensão de vídeo: o ffprobe não reconhece o formato.
+// Conteúdo fixo que não é mídia, com extensão de vídeo: o ffprobe não reconhece o formato.
+// Bytes aleatórios não servem: às vezes parecem um stream MP3 e mudam o erro do ffprobe entre execuções.
 export async function generateCorruptFile(): Promise<string> {
   const path = join(await fixtureDir(), 'corrupt.mp4');
-  await writeFile(path, randomBytes(4096));
+  await writeFile(path, 'this is not a video\n'.repeat(200));
   return path;
 }
 

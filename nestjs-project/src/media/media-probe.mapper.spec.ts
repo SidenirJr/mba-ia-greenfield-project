@@ -118,6 +118,8 @@ describe('classifyToolFailure', () => {
     'Invalid data found when processing input',
     'moov atom not found',
     'Could not find codec parameters for stream 0',
+    '[mp3 @ 0x1] Failed to read frame size: Could not seek to 5119.',
+    '[mp3 @ 0x1] Invalid frame size (1153): Could not seek to 4284.',
   ])('classifies "%s" as non-retryable with the given content code', (text) => {
     const error = classifyToolFailure(
       { stderr: text, timedOut: false },

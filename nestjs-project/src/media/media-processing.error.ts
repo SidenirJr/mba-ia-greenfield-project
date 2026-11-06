@@ -11,7 +11,7 @@ export type MediaErrorCode =
 const MAX_MESSAGE_LENGTH = 500;
 // Dados que o ffmpeg/ffprobe rejeitam por conteúdo (não adianta tentar de novo).
 const INVALID_DATA_PATTERN =
-  /invalid data found|moov atom not found|could not find codec parameters|unknown format|unsupported|not implemented|no such codec/i;
+  /invalid data found|moov atom not found|could not find codec parameters|invalid frame size|failed to read frame size|header missing|unknown format|unsupported|not implemented|no such codec/i;
 const URL_PATTERN = /https?:\/\/[^\s'"]+/gi;
 
 export class MediaProcessingError extends Error {
