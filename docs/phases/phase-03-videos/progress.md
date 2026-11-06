@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 4/31 completed
+**SIs:** 5/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -40,9 +40,14 @@
   - Consultado context7 (`/aws/aws-sdk-js-v3`): paginação de `ListParts` por `PartNumberMarker`/`NextPartNumberMarker` e `getSignedUrl` com `expiresIn` conforme implementado.
 
 ### SI-03.5 — Entidade Video, migration CreateVideos e VideosModule base
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 8 novos (video.entity.integration-spec 7, videos.module.spec 1) + migrations.integration-spec estendido (4 testes); suíte `npm test -- --runInBand` 29 suites / 183 passing; tsc exit 0; lint exit 0
+- **Observations:**
+  - Migration `1793963528103-CreateVideos.ts` gerada pelo CLI contra o banco sem a tabela e aplicada (`migration:run`) no banco de dev; o SQL gerado (enum `video_status`, unique em `public_id`, índices em `channel_id` e `status`, FK `channel_id` sem cascade) coincide com o Data Model e não foi editado.
+  - `duration_seconds` (numeric) também usa o transformer string para number (`numberTransformer`, junto dos `bigint`), porque o contrato da API o expõe como number e o pg devolve numeric como string; o plano só citava o `bigint`.
+  - Como `Channel` agora tem `@OneToMany` para `Video`, todo `DataSource` de teste precisa registrar `Video`: `Video` foi adicionado ao array de entidades dos 10 specs existentes que listam as entidades (consequência direta da relação bidirecional, sem mudança de comportamento).
+  - O spec de migrations ganhou testes de reversão do `CreateVideos` (tabela e enum), reaplicação (unique + FK) e a reversão das migrations de tokens foi mantida; o spec continua usando banco dedicado, que é descartado no `afterAll`.
+  - `videos.module.spec.ts` usa um `DataSource` falso global (sem conexão), ao contrário do `channels.module.spec.ts` existente, que conecta ao banco num `*.spec.ts`; não alterado (fora de escopo).
 
 ### SI-03.6 — Id público base62 e VideosRepository (unicidade e transições guardadas)
 - **Status:** pending
