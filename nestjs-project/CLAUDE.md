@@ -30,8 +30,14 @@ This project runs inside Docker. Always use the container for development:
 # Start containers
 docker compose up -d
 
-# Install dependencies (first time only)
+# Install dependencies (first time only). Until this runs, the `video-worker`
+# service exits with code 127 (`nest: not found`) because `node_modules` is
+# missing from the bind mount; restart it afterwards.
 docker compose exec nestjs-api npm install
+
+# Apply migrations (first time only) and restart the worker
+docker compose exec nestjs-api npm run migration:run
+docker compose restart video-worker
 
 # Run the dev server (watch mode)
 docker compose exec nestjs-api npm run start:dev
