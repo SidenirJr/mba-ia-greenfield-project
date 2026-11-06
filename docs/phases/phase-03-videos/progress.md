@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 12/31 completed
+**SIs:** 13/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -110,9 +110,12 @@
   - `completeUpload` concorrente com outro `complete` pode receber `NoSuchUpload` do storage e responder `INVALID_UPLOAD_PARTS` (400) em vez de 409; comportamento decorrente do mapeamento exigido pelo plano.
 
 ### SI-03.13 — Endpoint POST /videos (iniciar upload)
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 5 e2e passing em test/videos-initiate-upload.e2e-spec.ts (spec videos-initiate-upload.plan.md, AppModule real com DB, storage e Redis reais); suíte e2e completa 57/57; tsc exit 0; lint exit 0
+- **Observations:**
+  - Para não duplicar o bootstrap em cada e2e de vídeos (os próximos SIs 03.14-03.18 e 03.27-03.29 usam o mesmo), foram criados os helpers `src/test/videos-e2e-app.ts` (`createVideosE2eApp`: replica `main.ts`, bucket de teste dedicado, prefixo de fila único, `UPLOAD_PART_SIZE_BYTES=5242880`; `reset`/`close`) e `registerConfirmAndLogin` (captura o token de confirmação pelo spy no `MailService`, mesmo padrão do auth.e2e-spec).
+  - O arquivo e2e segue o `target_file` do spec (um `describe('videos-initiate-upload')` com um `it` por cenário); o campo `Last sync` dos specs não foi alterado (a skill implement não o manda atualizar).
+  - O handler usa `type: InitiateUploadResponseDto` no `@ApiResponse` 201 e `@ApiBearerAuth('access-token')` no nível da classe (todas as rotas do controller, exceto stream/download futuros, são protegidas).
 
 ### SI-03.14 — Endpoint POST /videos/:id/upload/part-urls
 - **Status:** pending
