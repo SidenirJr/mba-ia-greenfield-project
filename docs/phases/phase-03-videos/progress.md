@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 29/31 completed
+**SIs:** 30/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -250,9 +250,11 @@
   - O sweeper do `WorkerModule` in-process usa a fila de manutenção do prefixo exclusivo, sem interferir no `video-worker` do Compose (que deve ficar parado por causa do banco compartilhado).
 
 ### SI-03.30 — Regenerar openapi.json com os endpoints de vídeo
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 1 novo e2e passing em test/swagger.e2e-spec.ts (7/7 no arquivo); `openapi:export` rodado duas vezes sem diff (idempotente); tsc exit 0; lint exit 0
+- **Observations:**
+  - O openapi.json ganhou as oito rotas de `/videos` (tag `videos`) e os schemas `InitiateUploadDto`, `InitiateUploadResponseDto`, `PartUrlsDto`/`PartUrlsResponseDto`, `UploadedPartsResponseDto`, `CompleteUploadDto` e `VideoResponseDto`; os erros referenciam `ApiErrorEnvelope`.
+  - O `createApp` do `swagger.e2e-spec.ts` passou a usar `buildSwaggerDocument(app)` (o mesmo de `main.ts` e do export, com `extraModels: [ApiErrorEnvelope]`) em vez de `createDocument` direto, senão o `ApiErrorEnvelope` não entra em `components.schemas` no teste; os demais testes do arquivo seguem verdes.
 
 ### SI-03.31 — Documentação: CLAUDE.md raiz, nestjs-project/CLAUDE.md, README e diagrama
 - **Status:** pending
