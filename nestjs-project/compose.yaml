@@ -17,6 +17,24 @@ services:
       redis:
         condition: service_healthy
 
+  # Consumidor da fila de vídeos e do sweeper (TD-05); sobe com `docker compose up`, sem portas publicadas
+  video-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: npm run start:worker
+    volumes:
+      - .:/home/node/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
   db:
     image: postgres:17
     ports:

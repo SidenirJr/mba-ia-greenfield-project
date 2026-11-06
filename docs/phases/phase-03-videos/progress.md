@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 24/31 completed
+**SIs:** 25/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -209,9 +209,13 @@
   - O spec cobre `ensureProcessingJob` com job vivo (sem duplicar); o ramo de registro `failed`/`completed` já é coberto no spec do produtor (SI-03.9).
 
 ### SI-03.25 — Entrypoint worker.ts e serviço video-worker no Compose
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** no tests (infra/entrypoint, conforme o plano); validação manual no Compose: `docker compose up -d video-worker` sobe depois de db/redis/minio saudáveis e minio-init concluído, sem portas publicadas; um vídeo real (fixture ffmpeg enviada ao storage, `processing`, job enfileirado) foi consumido pelo container e virou `ready` com `duration_seconds` preenchido; `npm run build` da API não apaga `dist-worker` (e `dist` segue intacto); `docker compose stop` encerra sem erro; tsc exit 0; lint exit 0
+- **Observations:**
+  - **Ajuste ao plano:** o `tsconfig.worker.json` (outDir `dist-worker`) precisou de `exclude` próprio com `dist-worker`, e o `tsconfig.build.json` também passou a excluí-lo; sem isso o `tsc` do worker lia os `.d.ts` gerados na própria saída (`TS5055 ... would overwrite input file`, 94 erros) e a API poderia fazer o mesmo no `build`/`start:dev`.
+  - Shutdown: o nest CLI em watch repassa o SIGTERM e o `docker compose stop` mostra `npm error signal SIGTERM` com exit code 1 do `npm run` (ruído do npm/nest CLI no `--watch`); rodando `node dist-worker/worker` direto, o SIGTERM encerra sem erro nos logs (exit 143, o Nest re-emite o sinal após os shutdown hooks) e sem cliente Redis remanescente.
+  - O script de validação temporário (criava usuário, canal e vídeo no banco de dev) foi removido e as linhas apagadas; sobrou 1 objeto de fixture `videos/<uuid>/original` e a thumbnail no bucket de dev.
+  - `start:dev` não foi iniciado (regra do projeto); a ausência de conflito foi verificada pelo `build` e pelo `exclude`.
 
 ### SI-03.26 — VideoDeliveryService: URLs pré-assinadas de streaming e download
 - **Status:** pending
