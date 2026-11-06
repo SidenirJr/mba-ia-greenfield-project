@@ -6,3 +6,5 @@ export const VideoStatus = {
 } as const;
 
 export type VideoStatus = (typeof VideoStatus)[keyof typeof VideoStatus];
+
+export const VIDEO_PUBLIC_ID_LENGTH = 11;

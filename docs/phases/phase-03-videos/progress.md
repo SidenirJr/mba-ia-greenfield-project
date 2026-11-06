@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 5/31 completed
+**SIs:** 6/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -50,9 +50,13 @@
   - `videos.module.spec.ts` usa um `DataSource` falso global (sem conexão), ao contrário do `channels.module.spec.ts` existente, que conecta ao banco num `*.spec.ts`; não alterado (fora de escopo).
 
 ### SI-03.6 — Id público base62 e VideosRepository (unicidade e transições guardadas)
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 16 novos passing (video-public-id.util.spec 4, videos.repository.integration-spec 12); src/videos 24/24; tsc exit 0; lint exit 0
+- **Observations:**
+  - `createDraft` tenta no máximo 5 vezes (5 colisões consecutivas propagam o `QueryFailedError` 23505 original); a detecção da colisão procura `public_id` no `detail` do erro, como o `ChannelsService` faz para `nickname`. O helper `isPublicIdCollision` ficou privado ao repositório; o `ChannelsService` mantém a sua cópia (unificar é refactor fora do escopo deste SI).
+  - As transições (`transitionToProcessing`, `markReady`, `markError`, `markDraftError`) e `deleteDraft` devolvem o `affected` (number); `markReady` recebe `ReadyFields` (`duration_seconds`, `width`, `height`, `video_codec`, `container_format`, `bitrate_bps`, `metadata`). `markReady` usa um cast para `QueryDeepPartialEntity<Video>` porque o tipo do TypeORM não aceita objeto em coluna jsonb.
+  - `markDraftError` não limpa `upload_id` (o plano não pede); o `findExpiredDrafts`/`findStaleProcessing` ordenam pelo prazo/início mais antigo primeiro.
+  - `VideosModule` agora provê e exporta `VideosRepository` (além de `TypeOrmModule`).
 
 ### SI-03.7 — Exceções de domínio de vídeos e mapeamento no filtro existente
 - **Status:** pending
