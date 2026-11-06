@@ -8,6 +8,7 @@ import {
 import { User } from '../users/entities/user.entity';
 import { ChannelsService } from './channels.service';
 import { Channel } from './entities/channel.entity';
+import { ChannelNotFoundException } from '../common/exceptions/domain.exception';
 import { Video } from '../videos/entities/video.entity';
 
 const ALL_ENTITIES = [User, Channel, RefreshToken, VerificationToken, Video];
@@ -88,6 +89,31 @@ describe('ChannelsService (integration)', () => {
 
       const channels = await channelRepository.find();
       expect(channels).toHaveLength(2);
+    });
+  });
+
+  describe('getByUserId', () => {
+    it('returns the channel owned by the given user', async () => {
+      const user = await createUser();
+      const other = await createUser();
+      const created = await channelsService.createChannel(
+        user.id,
+        'owner@example.com',
+      );
+      await channelsService.createChannel(other.id, 'other@example.com');
+
+      const channel = await channelsService.getByUserId(user.id);
+
+      expect(channel.id).toBe(created.id);
+      expect(channel.user_id).toBe(user.id);
+    });
+
+    it('throws ChannelNotFoundException when the user has no channel', async () => {
+      const user = await createUser();
+
+      await expect(channelsService.getByUserId(user.id)).rejects.toBeInstanceOf(
+        ChannelNotFoundException,
+      );
     });
   });
 });

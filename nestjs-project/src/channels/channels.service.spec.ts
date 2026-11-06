@@ -1,6 +1,7 @@
 import { DataSource, QueryFailedError } from 'typeorm';
 import { ChannelsService } from './channels.service';
 import { Channel } from './entities/channel.entity';
+import { ChannelNotFoundException } from '../common/exceptions/domain.exception';
 
 interface MockManager {
   findOne: jest.Mock;
@@ -140,6 +141,36 @@ describe('ChannelsService', () => {
         service.createChannel('user-id', 'carol@example.com'),
       ).rejects.toThrow('Connection lost');
       expect(manager.save).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('getByUserId', () => {
+    function makeFindOneByDataSource(result: Channel | null) {
+      const findOneBy = jest.fn().mockResolvedValue(result);
+      const dataSource = {
+        getRepository: jest.fn().mockReturnValue({ findOneBy }),
+      } as unknown as DataSource;
+      return { dataSource, findOneBy };
+    }
+
+    it('returns the channel found by user_id', async () => {
+      const channel = makeChannel('owner');
+      const { dataSource, findOneBy } = makeFindOneByDataSource(channel);
+
+      const result = await new ChannelsService(dataSource).getByUserId(
+        'user-id',
+      );
+
+      expect(findOneBy).toHaveBeenCalledWith({ user_id: 'user-id' });
+      expect(result).toBe(channel);
+    });
+
+    it('throws ChannelNotFoundException when the user has no channel', async () => {
+      const { dataSource } = makeFindOneByDataSource(null);
+
+      await expect(
+        new ChannelsService(dataSource).getByUserId('user-id'),
+      ).rejects.toBeInstanceOf(ChannelNotFoundException);
     });
   });
 });

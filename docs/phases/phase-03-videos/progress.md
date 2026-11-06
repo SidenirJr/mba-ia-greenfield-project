@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 7/31 completed
+**SIs:** 8/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -65,9 +65,10 @@
   - Mensagens e códigos/status conforme o Error Catalog; nenhuma alteração no código do filtro.
 
 ### SI-03.8 — ChannelsService: resolver o canal do usuário autenticado
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 4 novos passing (unit 2, integration 2) em src/channels; src/channels 29/29; tsc exit 0; lint exit 0
+- **Observations:** 
+  - Usa `dataSource.getRepository(Channel).findOneBy({ user_id })` para não alterar o construtor existente (per TD-11).
 
 ### SI-03.9 — Fila: QueueModule e produtor de jobs de processamento
 - **Status:** pending
