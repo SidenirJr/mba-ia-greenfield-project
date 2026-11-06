@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, QueryFailedError } from 'typeorm';
+import { ChannelNotFoundException } from '../common/exceptions/domain.exception';
 import { appendRandomSuffix, sanitizeNickname } from './nickname.util';
 import { Channel } from './entities/channel.entity';
 
@@ -58,5 +59,13 @@ export class ChannelsService {
         'Nickname conflict could not be resolved after max retries',
       );
     });
+  }
+
+  async getByUserId(userId: string): Promise<Channel> {
+    const channel = await this.dataSource
+      .getRepository(Channel)
+      .findOneBy({ user_id: userId });
+    if (!channel) throw new ChannelNotFoundException();
+    return channel;
   }
 }

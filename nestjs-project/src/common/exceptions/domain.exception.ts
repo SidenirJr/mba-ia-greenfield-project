@@ -48,3 +48,65 @@ export class TokenReuseDetectedException extends DomainException {
     );
   }
 }
+
+export class VideoNotFoundException extends DomainException {
+  constructor() {
+    super('VIDEO_NOT_FOUND', 404, 'Video not found');
+  }
+}
+
+export class ChannelNotFoundException extends DomainException {
+  constructor() {
+    super('CHANNEL_NOT_FOUND', 404, 'Channel not found');
+  }
+}
+
+export class InvalidContentTypeException extends DomainException {
+  constructor() {
+    super('INVALID_CONTENT_TYPE', 415, 'Content type must be a video type');
+  }
+}
+
+export class UploadSizeExceedsLimitException extends DomainException {
+  constructor() {
+    super(
+      'UPLOAD_SIZE_EXCEEDS_LIMIT',
+      413,
+      'Upload size exceeds the allowed limit',
+    );
+  }
+}
+
+export class VideoNotInDraftException extends DomainException {
+  constructor() {
+    super('VIDEO_NOT_IN_DRAFT', 409, 'Video is not in draft status');
+  }
+}
+
+export class UploadExpiredException extends DomainException {
+  constructor() {
+    super('UPLOAD_EXPIRED', 410, 'Upload has expired');
+  }
+}
+
+export class InvalidPartNumberException extends DomainException {
+  constructor() {
+    super('INVALID_PART_NUMBER', 400, 'Part number out of range');
+  }
+}
+
+export class InvalidUploadPartsException extends DomainException {
+  constructor() {
+    super('INVALID_UPLOAD_PARTS', 400, 'Uploaded parts are invalid');
+  }
+}
+
+export class UploadSizeMismatchException extends DomainException {
+  constructor() {
+    super(
+      'UPLOAD_SIZE_MISMATCH',
+      409,
+      'Uploaded size does not match the declared size',
+    );
+  }
+}

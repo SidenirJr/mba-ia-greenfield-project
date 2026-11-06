@@ -12,6 +12,28 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+      minio-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  # Consumidor da fila de vídeos e do sweeper (TD-05); sobe com `docker compose up`, sem portas publicadas
+  video-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: npm run start:worker
+    volumes:
+      - .:/home/node/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
 
   db:
     image: postgres:17
@@ -33,4 +55,56 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  # Object storage S3-compatible (fork do MinIO; ver TD-13 da fase 03)
+  minio:
+    image: pgsty/silo
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${S3_ACCESS_KEY_ID}
+      - MINIO_ROOT_PASSWORD=${S3_SECRET_ACCESS_KEY}
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
+  # One-shot e idempotente: cria o bucket e encerra
+  minio-init:
+    image: pgsty/mc
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY}
+      - S3_BUCKET=${S3_BUCKET}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        mc alias set local http://minio:9000 "$$S3_ACCESS_KEY_ID" "$$S3_SECRET_ACCESS_KEY"
+        mc mb --ignore-existing "local/$$S3_BUCKET"
+        # CORS de bucket (a engine suporta `mc cors set`); ETag exposto para o upload multipart direto do browser
+        echo '<CORSConfiguration><CORSRule><AllowedOrigin>*</AllowedOrigin><AllowedMethod>GET</AllowedMethod><AllowedMethod>PUT</AllowedMethod><AllowedMethod>HEAD</AllowedMethod><AllowedHeader>*</AllowedHeader><ExposeHeader>ETag</ExposeHeader></CORSRule></CORSConfiguration>' | mc cors set "local/$$S3_BUCKET" -
+
+  # Fila de jobs (BullMQ). Sem `ports`: a 6379 do host esta ocupada e o Redis so e acessado pelo nome do servico
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory-policy noeviction --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  minio-data:
+  redis-data:

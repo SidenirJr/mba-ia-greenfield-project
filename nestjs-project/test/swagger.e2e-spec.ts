@@ -6,7 +6,7 @@ import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import { DomainExceptionFilter } from '../src/common/filters/domain-exception.filter';
 import { ValidationExceptionFilter } from '../src/common/filters/validation-exception.filter';
-import { buildSwaggerConfig } from '../src/swagger/swagger-document';
+import { buildSwaggerDocument } from '../src/swagger/swagger-document';
 
 async function createApp(withSwagger: boolean): Promise<INestApplication<App>> {
   const moduleFixture = await Test.createTestingModule({
@@ -27,7 +27,7 @@ async function createApp(withSwagger: boolean): Promise<INestApplication<App>> {
   );
 
   if (withSwagger) {
-    const document = SwaggerModule.createDocument(app, buildSwaggerConfig());
+    const document = buildSwaggerDocument(app);
     SwaggerModule.setup('api/docs', app, document, {
       customSiteTitle: 'StreamTube API Docs',
       swaggerOptions: { persistAuthorization: true },
@@ -84,6 +84,50 @@ describe('Swagger endpoints (e2e)', () => {
         .get('/api/docs-yaml')
         .expect(200);
       expect(res.headers['content-type']).toMatch(/yaml/);
+    });
+
+    it('documents the eight /videos routes with tag, schemas and error envelope', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/docs-json')
+        .expect(200);
+      const doc = res.body as {
+        paths: Record<
+          string,
+          Record<string, { tags: string[]; responses: Record<string, unknown> }>
+        >;
+        components: { schemas: Record<string, unknown> };
+      };
+      const operations: [string, string, string, string][] = [
+        ['/videos', 'post', '201', '400'],
+        ['/videos/{id}', 'get', '200', '404'],
+        ['/videos/{id}/upload/part-urls', 'post', '200', '410'],
+        ['/videos/{id}/upload/parts', 'get', '200', '410'],
+        ['/videos/{id}/upload/complete', 'post', '202', '409'],
+        ['/videos/{id}/upload', 'delete', '204', '409'],
+        ['/videos/{id}/stream', 'get', '302', '404'],
+        ['/videos/{id}/download', 'get', '302', '404'],
+      ];
+      for (const [path, method, success, error] of operations) {
+        const operation = doc.paths[path]?.[method];
+        expect(operation?.tags).toContain('videos');
+        expect(operation.responses).toHaveProperty(success);
+        expect(operation.responses[error]).toMatchObject({
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/ApiErrorEnvelope' },
+            },
+          },
+        });
+      }
+      expect(Object.keys(doc.components.schemas)).toEqual(
+        expect.arrayContaining([
+          'InitiateUploadResponseDto',
+          'PartUrlsResponseDto',
+          'UploadedPartsResponseDto',
+          'VideoResponseDto',
+          'ApiErrorEnvelope',
+        ]),
+      );
     });
   });
 
