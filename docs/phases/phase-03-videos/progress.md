@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
-**Status:** in_progress
-**SIs:** 30/31 completed
+**Status:** completed
+**SIs:** 31/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -257,6 +257,10 @@
   - O `createApp` do `swagger.e2e-spec.ts` passou a usar `buildSwaggerDocument(app)` (o mesmo de `main.ts` e do export, com `extraModels: [ApiErrorEnvelope]`) em vez de `createDocument` direto, senão o `ApiErrorEnvelope` não entra em `components.schemas` no teste; os demais testes do arquivo seguem verdes.
 
 ### SI-03.31 — Documentação: CLAUDE.md raiz, nestjs-project/CLAUDE.md, README e diagrama
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** no tests (documentação, conforme o plano); DoD final com `video-worker` parado: `npm test -- --runInBand` 49 suites / 401 passing, `npm run test:e2e -- --runInBand` 12 suites / 97 passing, `npx tsc --noEmit` exit 0, `npm run lint` exit 0; `docker compose ps -a` com db, mailpit, redis e minio healthy, minio-init `Exited (0)`, video-worker e nestjs-api `Up` (esses dois não têm healthcheck no compose)
+- **Observations:**
+  - Atualizados `CLAUDE.md` (módulos reais, fila BullMQ + Redis, storage `pgsty/silo` + `minio-init` com a nota de que o fork atende o "S3/MinIO" do enunciado, worker `src/worker.ts`, tabela dos oito endpoints, DoD com a regra do `video-worker`), `nestjs-project/CLAUDE.md` (serviços do Compose, health checks, `start:worker`/`dist-worker`, `ffmpeg` na imagem, exceção de autostart do `video-worker`, regra de parar o worker nas suítes, tabela de variáveis de ambiente, `.env` a partir do `.env.example`, config ESM do Jest), `README.md`, `docs/diagrams/software-arch.mermaid` (fila "BullMQ + Redis", storage "S3-compatible (pgsty/silo, MinIO fork)", worker "Nest.js + FFmpeg"; a relação API→storage passou a "Presigns upload/stream URLs", pois a API não carrega bytes). Cada arquivo, rota, variável, script e serviço citado foi conferido contra o código/compose reais; nenhuma doc manda publicar a porta do Redis.
+  - **Correção documental (ESM-only):** `docs/phases/phase-03-videos/library-refs.md` e `docs/decisions/technical-decisions-phase-03-videos.md` (TD-01, via `**Revisions:**` no formato do `technical-decisions-openapi-docs-nestjs.md`) afirmavam que não havia dependência ESM-only; `@nestjs/bullmq@12` e `@nestjs/bull-shared` são ESM-only e o Jest usa `transformIgnorePatterns` + `transform` restritos (achado do SI-03.9). A decisão (BullMQ + Redis) permanece.
+  - **Consolidado dos desvios da fase:** (1) SI-03.9 ESM-only do `@nestjs/bullmq` (acima); jobId com hífen (`process-video-{id}`) porque ':' é rejeitado; (2) SI-03.12 abort de melhor esforço quando `setUploadId` falha após abrir o multipart; `complete` concorrente pode virar 400 `INVALID_UPLOAD_PARTS` em vez de 409; objeto de vídeo em `error` por divergência de tamanho permanece no storage (sem política de limpeza definida na fase); (3) SI-03.16/03.17 e2e alinhados ao spec após o SI-03.18 (dependência de spec posterior); (4) SI-03.22 fixture corrompida tornada determinística e classificador do ffprobe estendido (flakiness); (5) SI-03.23 extração de `src/config/infra-module-options.ts` e SI-03.24 `TypeOrmModule.forFeature([User])` no `WorkerModule`; (6) SI-03.25 `exclude` em `tsconfig.worker.json`/`tsconfig.build.json` por causa de `dist-worker`; ruído de `npm error signal SIGTERM` no `docker compose stop video-worker` (nest CLI em watch); (7) SI-03.29 `AppModule` e `WorkerModule` como dois `TestingModule`; (8) SI-03.30 `swagger.e2e-spec.ts` passou a usar `buildSwaggerDocument`.
+  - **Pontos fora de escopo registrados:** limpeza de objetos de vídeos em `error`; objeto de fixture e thumbnail do SI-03.25 deixados no bucket de dev; `Last sync` dos specs não atualizado; `.env.example` mantém o `MAIL_FROM` pré-existente sem aspas corretas (não corrigido, por instrução).

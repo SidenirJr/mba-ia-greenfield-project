@@ -32,7 +32,7 @@ Distilled docs for libraries decided in this slice. Pulled via Context7 (BullMQ 
 
 **Source:** `/taskforcesh/bullmq` (Context7, High reputation) — `phase-03-videos/TD-01` (queue), `TD-04` (deterministic job id), `TD-09` (retry policy, sweeper as job scheduler).
 
-- **Compatibility:** `bullmq@6.7.0` ships a CJS build (`main: ./dist/cjs/index.js`), so Jest 30 + ts-jest under CommonJS are unaffected (no ESM-only risk). Node engines `>=14.18`.
+- **Compatibility:** `bullmq@6.7.0` ships a CJS build (`main: ./dist/cjs/index.js`), so Jest 30 + ts-jest under CommonJS are unaffected for `bullmq` itself. The Nest wrapper is the exception: `@nestjs/bullmq` and `@nestjs/bull-shared` are ESM-only (see the `@nestjs/bullmq` section). Node engines `>=14.18`.
 - **Redis client is an optional peer in v6.** `peerDependencies: ioredis >=5.0.0 | redis >=5.0.0 | pg` are all optional; install `ioredis` explicitly (TD-01 Libraries). Pass the connection as options (`{ host: 'redis', port: 6379 }`) or an ioredis instance. For a shared `IORedis` instance used by Workers, set `maxRetriesPerRequest: null` (BullMQ sets it for Workers by default and warns when overridden).
 - **Retries / backoff:** `attempts` + `backoff` are job options. Exponential retries after `2^(attempts-1) * delay` ms:
 
@@ -69,6 +69,7 @@ await queue.upsertJobScheduler(
 **Source:** `/nestjs/bull` (Context7, High reputation) — `phase-03-videos/TD-01`, `TD-05`.
 
 - **Compatibility:** `@nestjs/bullmq@12.0.0` peers: `@nestjs/core|common ^10 || ^11 || ^12`, `bullmq ^3 - ^6` — installs on Nest 11.1.x.
+- **ESM-only (correction found in SI-03.9):** `@nestjs/bullmq@12.0.1` and `@nestjs/bull-shared@12.0.1` declare `"type": "module"`, unlike `bullmq`, which ships a CJS build. Jest (CommonJS) fails with `Unexpected token 'export'` unless `transformIgnorePatterns` lets these two packages through and a `transform` entry compiles them with `ts-jest` (`allowJs`, `module: commonjs`). Both are configured in `nestjs-project/package.json` (jest) and `nestjs-project/test/jest-e2e.json` — keep them. At runtime Node 25 loads the packages through `require` without changes.
 - **Module wiring:** `BullModule.forRootAsync({ useFactory, inject })` for the shared Redis connection (inject the namespaced `redis` config via `registerAs` per phase-01 TD-03), then `BullModule.registerQueue({ name, defaultJobOptions })` per queue.
 
 ```typescript
@@ -122,4 +123,4 @@ new S3Client({
 
 - `pgsty/silo` / `pgsty/mc` (TD-13) are Docker images, not npm libraries — not cached here; behavior (multipart, presign, CORS with `ETag` exposed, `ListParts`, Range) must be confirmed in the first spike. TD-10 init service uses `pgsty/mc`.
 - `ffmpeg`/`ffprobe` are apt binaries added to `Dockerfile.dev` (TD-05/TD-06), not npm packages.
-- No ESM-only dependency is introduced (`nanoid`, `pg-boss`, `fluent-ffmpeg` were rejected); ID generation uses `node:crypto` (TD-07).
+- `nanoid`, `pg-boss` and `fluent-ffmpeg` were rejected; ID generation uses `node:crypto` (TD-07). The one ESM-only exception is `@nestjs/bullmq` + `@nestjs/bull-shared` (TD-01), handled by the restricted Jest `transformIgnorePatterns` + `transform` (see the `@nestjs/bullmq` section).

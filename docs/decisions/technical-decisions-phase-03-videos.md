@@ -67,6 +67,10 @@ _Subprojects in scope:_
 
 **Libraries:** `bullmq@^6.7.0`, `@nestjs/bullmq@^12.0.0`, `ioredis@^5.11.1`
 
+**Revisions:**
+
+- 2026-11-06 — Corrects the claim that Option A is "CJS-safe" and that Jest/ts-jest are unaffected: `bullmq@6` does ship a CJS build, but `@nestjs/bullmq@12.0.1` and `@nestjs/bull-shared@12.0.1` are ESM-only (`"type": "module"`), and Jest (CommonJS) failed with `Unexpected token 'export'`. _Rationale:_ found in SI-03.9; the decision (BullMQ + Redis via `@nestjs/bullmq`) stands, with the cost paid in test infrastructure only: `transformIgnorePatterns` plus a `ts-jest` `transform` restricted to these two packages in `nestjs-project/package.json` and `test/jest-e2e.json`. Runtime is unaffected (Node 25 `require`s ESM).
+
 ---
 
 ## TD-02: Upload Strategy for Files up to 10GB
