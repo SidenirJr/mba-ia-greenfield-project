@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 20/31 completed
+**SIs:** 21/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -173,9 +173,12 @@
   - O `metadata` guarda `{ format, streams[] }` aparado por allow-list de chaves, sem `format.filename` e com varredura final de URLs; o timeout é testado com servidor HTTP local que nunca responde (determinístico).
 
 ### SI-03.21 — VideoPipelineService: transições de processamento e limpeza para worker e sweeper
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 20 novos passing (video-pipeline.service.spec 10, video-pipeline.service.integration-spec 10 com DB e storage reais); videos.module.spec 1/1; tsc exit 0; lint exit 0
+- **Observations:**
+  - `markReady`/`markError` devolvem `boolean` (houve efeito); `getForProcessing` devolve só `id`, `status` e `content_type` (nunca o `upload_id`).
+  - `abortExpiredDrafts` isola cada rascunho (contexto de background): `NoSuchUpload` é tolerado (a linha é apagada mesmo assim — duplica a tolerância do `StorageService`, de propósito, porque o spec do plano exige o comportamento no pipeline), qualquer outra falha vira log `warn`, mantém a linha para a próxima varredura e não impede os demais; rascunho sem `upload_id` pula o abort. A contagem retornada é de linhas realmente removidas.
+  - `VideosModule` registra e exporta `VideoPipelineService`; sem mudança nos specs existentes.
 
 ### SI-03.22 — VideoProcessingService: metadados, thumbnail e transição para ready/error
 - **Status:** pending
