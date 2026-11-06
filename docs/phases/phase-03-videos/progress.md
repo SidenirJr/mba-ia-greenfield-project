@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 1/31 completed
+**SIs:** 2/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -16,9 +16,11 @@
   - O spec limpa os objetos que cria; uploads abortados não deixam multipart pendente.
 
 ### SI-03.2 — Infra: ffmpeg no Dockerfile.dev e serviço Redis no Compose
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** no tests (infra); validação manual no Compose: ffmpeg/ffprobe como `node`, Redis healthy, PING via `redis:6379`; regressão do spec do SI-03.1 5/5; tsc exit 0; lint exit 0
+- **Observations:**
+  - ffmpeg/ffprobe instalados na imagem: versão 5.1.9 (Debian bookworm, apt). `redis:7-alpine` baixou normalmente; `maxmemory-policy=noeviction`, `appendonly=yes`; o serviço `redis` não publica nenhuma porta (apenas `6379/tcp` interno).
+  - Volumes nomeados `minio-data` e `redis-data` declarados no `compose.yaml`; `nestjs-api` agora depende de `minio-init` (completed) e `redis` (healthy).
 
 ### SI-03.3 — Dependências de fila, namespaces de configuração e validação Joi
 - **Status:** pending

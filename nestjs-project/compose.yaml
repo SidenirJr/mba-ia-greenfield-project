@@ -14,6 +14,8 @@ services:
         condition: service_started
       minio-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
 
   db:
     image: postgres:17
@@ -73,5 +75,18 @@ services:
         # CORS de bucket (a engine suporta `mc cors set`); ETag exposto para o upload multipart direto do browser
         echo '<CORSConfiguration><CORSRule><AllowedOrigin>*</AllowedOrigin><AllowedMethod>GET</AllowedMethod><AllowedMethod>PUT</AllowedMethod><AllowedMethod>HEAD</AllowedMethod><AllowedHeader>*</AllowedHeader><ExposeHeader>ETag</ExposeHeader></CORSRule></CORSConfiguration>' | mc cors set "local/$$S3_BUCKET" -
 
+  # Fila de jobs (BullMQ). Sem `ports`: a 6379 do host esta ocupada e o Redis so e acessado pelo nome do servico
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory-policy noeviction --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   minio-data:
+  redis-data:
