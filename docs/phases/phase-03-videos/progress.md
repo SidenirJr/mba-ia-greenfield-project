@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 13/31 completed
+**SIs:** 14/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -118,9 +118,11 @@
   - O handler usa `type: InitiateUploadResponseDto` no `@ApiResponse` 201 e `@ApiBearerAuth('access-token')` no nível da classe (todas as rotas do controller, exceto stream/download futuros, são protegidas).
 
 ### SI-03.14 — Endpoint POST /videos/:id/upload/part-urls
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 6 e2e passing em test/videos-part-urls.e2e-spec.ts (spec videos-part-urls.plan.md); tsc exit 0; lint exit 0
+- **Observations:**
+  - `@ApiBearerAuth('access-token')` foi movido do nível da classe para cada handler protegido (regra: handlers `@Public()` futuros, stream/download, não podem carregá-lo); o handler do SI-03.13 foi ajustado na mesma edição, sem mudança de comportamento.
+  - O controller passa `dto.part_numbers` ao serviço; o `Last sync` do spec não foi alterado (a skill não manda).
 
 ### SI-03.15 — Endpoint GET /videos/:id/upload/parts (retomada)
 - **Status:** pending
