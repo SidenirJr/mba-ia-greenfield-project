@@ -1,22 +1,27 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { ChannelsService } from '../channels/channels.service';
 import {
   InvalidContentTypeException,
   InvalidPartNumberException,
+  InvalidUploadPartsException,
   UploadExpiredException,
   UploadSizeExceedsLimitException,
+  UploadSizeMismatchException,
   VideoNotFoundException,
   VideoNotInDraftException,
 } from '../common/exceptions/domain.exception';
 import storageConfig from '../config/storage.config';
 import uploadConfig from '../config/upload.config';
+import { VideoJobsProducer } from '../queue/video-jobs.producer';
 import { videoOriginalKey } from '../storage/storage.constants';
 import { StorageService } from '../storage/storage.service';
 import { InitiateUploadResponseDto } from './dto/initiate-upload-response.dto';
+import { CompleteUploadDto } from './dto/complete-upload.dto';
 import { InitiateUploadDto } from './dto/initiate-upload.dto';
 import { PartUrlsResponseDto } from './dto/part-urls-response.dto';
 import { UploadedPartsResponseDto } from './dto/uploaded-parts-response.dto';
+import { VideoResponseDto } from './dto/video-response.dto';
 import { Video } from './entities/video.entity';
 import { planUploadParts } from './upload-part-planner';
 import { VideoStatus } from './videos.constants';
@@ -24,9 +29,19 @@ import { VideosRepository } from './videos.repository';
 
 const VIDEO_CONTENT_TYPE_PREFIX = 'video/';
 const MS_PER_HOUR = 3600_000;
+const UPLOAD_SIZE_MISMATCH_CODE = 'UPLOAD_SIZE_MISMATCH';
+// Erros do S3 que significam "a lista de partes não fecha o objeto".
+const INVALID_PARTS_S3_ERRORS = new Set([
+  'InvalidPart',
+  'InvalidPartOrder',
+  'EntityTooSmall',
+  'NoSuchUpload',
+]);
 
 @Injectable()
 export class VideosService {
+  private readonly logger = new Logger(VideosService.name);
+
   constructor(
     private readonly videosRepository: VideosRepository,
     private readonly storageService: StorageService,
@@ -35,6 +50,7 @@ export class VideosService {
     private readonly config: ConfigType<typeof uploadConfig>,
     @Inject(storageConfig.KEY)
     private readonly storageSettings: ConfigType<typeof storageConfig>,
+    private readonly videoJobsProducer: VideoJobsProducer,
   ) {}
 
   async initiateUpload(
@@ -67,14 +83,16 @@ export class VideosService {
       upload_expires_at: uploadExpiresAt,
     });
 
+    let uploadId: string | undefined;
     try {
-      const uploadId = await this.storageService.createMultipartUpload(
+      uploadId = await this.storageService.createMultipartUpload(
         videoOriginalKey(draft.id),
         dto.content_type,
       );
       await this.videosRepository.setUploadId(draft.id, uploadId);
     } catch (error) {
-      // Compensação: sem multipart aberto o rascunho não serve para nada.
+      // Compensação: sem multipart registrado o rascunho não serve para nada.
+      if (uploadId) await this.abortQuietly(draft.id, uploadId);
       await this.videosRepository.deleteDraft(draft.id);
       throw error;
     }
@@ -133,6 +151,110 @@ export class VideosService {
         }))
         .sort((a, b) => a.part_number - b.part_number),
     };
+  }
+
+  async completeUpload(
+    userId: string,
+    publicId: string,
+    dto: CompleteUploadDto,
+  ): Promise<VideoResponseDto> {
+    const video = await this.getOwnedDraft(userId, publicId);
+    const key = videoOriginalKey(video.id);
+
+    try {
+      await this.storageService.completeMultipartUpload(
+        key,
+        video.upload_id!,
+        dto.parts.map((part) => ({
+          partNumber: part.part_number,
+          etag: part.etag,
+        })),
+      );
+    } catch (error) {
+      if (
+        INVALID_PARTS_S3_ERRORS.has((error as { name?: string }).name ?? '')
+      ) {
+        throw new InvalidUploadPartsException();
+      }
+      throw error;
+    }
+
+    const { contentLength } = await this.storageService.headObject(key);
+    if (contentLength !== video.size_bytes) {
+      await this.videosRepository.markDraftError(
+        video.id,
+        UPLOAD_SIZE_MISMATCH_CODE,
+        'Uploaded size does not match the declared size',
+      );
+      throw new UploadSizeMismatchException();
+    }
+
+    const affected = await this.videosRepository.transitionToProcessing(
+      video.id,
+      new Date(),
+    );
+    if (affected === 0) throw new VideoNotInDraftException();
+
+    try {
+      await this.videoJobsProducer.enqueueProcessing(video.id);
+    } catch (error) {
+      // Conversão intencional em resultado de domínio: `processing` é durável e o sweeper reenfileira.
+      this.logger.error(
+        `Failed to enqueue processing for video ${video.id}; the sweeper will retry`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+
+    const processing = await this.videosRepository.findById(video.id);
+    if (!processing) throw new VideoNotFoundException();
+    return this.toVideoResponse(processing);
+  }
+
+  async abortUpload(userId: string, publicId: string): Promise<void> {
+    const video = await this.getOwnedDraft(userId, publicId, {
+      requireValid: false,
+    });
+    await this.storageService.abortMultipartUpload(
+      videoOriginalKey(video.id),
+      video.upload_id!,
+    );
+    const deleted = await this.videosRepository.deleteDraft(video.id);
+    // 0 linhas: um `complete` concorrente já tirou o vídeo de draft.
+    if (deleted === 0) throw new VideoNotInDraftException();
+  }
+
+  private toVideoResponse(video: Video): VideoResponseDto {
+    return {
+      id: video.public_id,
+      status: video.status,
+      original_file_name: video.original_file_name,
+      content_type: video.content_type,
+      size_bytes: video.size_bytes,
+      duration_seconds: video.duration_seconds,
+      width: video.width,
+      height: video.height,
+      video_codec: video.video_codec,
+      container_format: video.container_format,
+      bitrate_bps: video.bitrate_bps,
+      error_code: video.error_code,
+      error_message: video.error_message,
+      created_at: video.created_at.toISOString(),
+      updated_at: video.updated_at.toISOString(),
+    };
+  }
+
+  // Melhor esforço: um multipart órfão não deve mascarar o erro original da compensação.
+  private async abortQuietly(videoId: string, uploadId: string): Promise<void> {
+    try {
+      await this.storageService.abortMultipartUpload(
+        videoOriginalKey(videoId),
+        uploadId,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to abort multipart upload of video ${videoId}: ${String(error)}`,
+      );
+    }
   }
 
   // Ponto único de propriedade/estado/validade; vídeo alheio e inexistente são indistinguíveis (404).

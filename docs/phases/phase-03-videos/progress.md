@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 11/31 completed
+**SIs:** 12/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -99,9 +99,15 @@
   - Os números de parte são deduplicados e devolvidos em ordem crescente.
 
 ### SI-03.12 — VideosService: completar (HeadObject, transição e enqueue) e abortar upload
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 25 novos passing (unit 16 em videos.service.spec, integration 9 em videos.service.integration-spec com DB, storage e Redis reais); src/videos 80/80; tsc exit 0; lint exit 0
+- **Observations:**
+  - `VideosModule` agora importa `QueueModule`; por isso `videos.repository.integration-spec.ts` ganhou `redisConfig` no `ConfigModule` e `videos.module.spec.ts` substitui o `QueueModule` por um módulo falso via `overrideModule` (o spec é unit e não deve abrir conexão com o Redis); o spec de integração do serviço usa prefixo de fila único (`uniqueQueuePrefix`) e `obliterate` das filas.
+  - **Risco do SI-03.10 tratado:** se `setUploadId` falhar depois de o multipart abrir, o `initiateUpload` agora faz um abort de melhor esforço (falha do abort só vira log `warn` e não mascara o erro original) antes de `deleteDraft`; coberto por 2 unit e 1 integration (contagem de multiparts abertos antes/depois). Alteração mínima no código do SI-03.10, registrada aqui.
+  - O erro do storage para ETag errada na engine silo chega com `name = 'InvalidPart'` e é mapeado para `InvalidUploadPartsException` (verificado com o storage real). `completeUpload` também limita `parts` a `MAX_PARTS` itens (`@ArrayMaxSize`), além do "não vazio" do plano, pelo teto de 10000 partes do S3.
+  - `completeUpload` busca o vídeo de novo (`findById`) após a transição guardada para responder com `updated_at` real; o `abortUpload` lança `VideoNotInDraftException` se `deleteDraft` afetar 0 linhas (complete concorrente).
+  - No mismatch de tamanho o objeto já completo permanece no storage (o plano só pede `markDraftError`); a limpeza de objetos de vídeos em `error` não está definida na fase: ponto de atenção fora do escopo.
+  - `completeUpload` concorrente com outro `complete` pode receber `NoSuchUpload` do storage e responder `INVALID_UPLOAD_PARTS` (400) em vez de 409; comportamento decorrente do mapeamento exigido pelo plano.
 
 ### SI-03.13 — Endpoint POST /videos (iniciar upload)
 - **Status:** pending

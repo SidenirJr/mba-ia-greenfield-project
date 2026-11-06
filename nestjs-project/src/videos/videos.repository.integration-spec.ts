@@ -5,6 +5,7 @@ import { DataSource, QueryFailedError } from 'typeorm';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
 import { VerificationToken } from '../auth/entities/verification-token.entity';
 import { Channel } from '../channels/entities/channel.entity';
+import redisConfig from '../config/redis.config';
 import storageConfig from '../config/storage.config';
 import uploadConfig from '../config/upload.config';
 import {
@@ -42,7 +43,7 @@ describe('VideosRepository (integration)', () => {
       imports: [
         ConfigModule.forRoot({
           isGlobal: true,
-          load: [storageConfig, uploadConfig],
+          load: [storageConfig, uploadConfig, redisConfig],
         }),
         TypeOrmModule.forRoot(createTestDataSource(ALL_ENTITIES).options),
         VideosModule,

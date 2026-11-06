@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import storageConfig from '../config/storage.config';
 import { Channel } from '../channels/entities/channel.entity';
@@ -6,11 +7,14 @@ import {
   ChannelNotFoundException,
   InvalidContentTypeException,
   InvalidPartNumberException,
+  InvalidUploadPartsException,
   UploadExpiredException,
   UploadSizeExceedsLimitException,
+  UploadSizeMismatchException,
   VideoNotFoundException,
   VideoNotInDraftException,
 } from '../common/exceptions/domain.exception';
+import type { VideoJobsProducer } from '../queue/video-jobs.producer';
 import { StorageService } from '../storage/storage.service';
 import { Video } from './entities/video.entity';
 import { VideoStatus } from './videos.constants';
@@ -30,11 +34,18 @@ describe('VideosService', () => {
     setUploadId: jest.Mock;
     deleteDraft: jest.Mock;
     findOwnedByPublicId: jest.Mock;
+    findById: jest.Mock;
+    markDraftError: jest.Mock;
+    transitionToProcessing: jest.Mock;
   };
+  let producer: { enqueueProcessing: jest.Mock };
   let storage: {
     createMultipartUpload: jest.Mock;
     presignUploadPart: jest.Mock;
     listParts: jest.Mock;
+    completeMultipartUpload: jest.Mock;
+    headObject: jest.Mock;
+    abortMultipartUpload: jest.Mock;
   };
   let channels: { getByUserId: jest.Mock };
   let service: VideosService;
@@ -55,7 +66,11 @@ describe('VideosService', () => {
       setUploadId: jest.fn().mockResolvedValue(undefined),
       deleteDraft: jest.fn().mockResolvedValue(1),
       findOwnedByPublicId: jest.fn().mockResolvedValue(null),
+      findById: jest.fn(),
+      markDraftError: jest.fn().mockResolvedValue(1),
+      transitionToProcessing: jest.fn().mockResolvedValue(1),
     };
+    producer = { enqueueProcessing: jest.fn().mockResolvedValue(undefined) };
     storage = {
       createMultipartUpload: jest.fn().mockResolvedValue('up-1'),
       presignUploadPart: jest.fn(
@@ -63,6 +78,9 @@ describe('VideosService', () => {
           Promise.resolve(`https://storage/part-${partNumber}`),
       ),
       listParts: jest.fn().mockResolvedValue([]),
+      completeMultipartUpload: jest.fn().mockResolvedValue(undefined),
+      headObject: jest.fn(),
+      abortMultipartUpload: jest.fn().mockResolvedValue(undefined),
     };
     channels = {
       getByUserId: jest.fn().mockResolvedValue({ id: 'channel-1' } as Channel),
@@ -73,6 +91,7 @@ describe('VideosService', () => {
       channels as unknown as ChannelsService,
       config,
       storageSettings as ConfigType<typeof storageConfig>,
+      producer as unknown as VideoJobsProducer,
     );
   });
 
@@ -156,6 +175,31 @@ describe('VideosService', () => {
 
       expect(repository.deleteDraft).toHaveBeenCalledWith('video-uuid');
       expect(repository.setUploadId).not.toHaveBeenCalled();
+      expect(storage.abortMultipartUpload).not.toHaveBeenCalled();
+    });
+
+    it('aborts the opened multipart and deletes the draft when saving the upload id fails', async () => {
+      const failure = new Error('db down');
+      repository.setUploadId.mockRejectedValue(failure);
+
+      await expect(service.initiateUpload('user-1', dto)).rejects.toBe(failure);
+
+      expect(storage.abortMultipartUpload).toHaveBeenCalledWith(
+        'videos/video-uuid/original',
+        'up-1',
+      );
+      expect(repository.deleteDraft).toHaveBeenCalledWith('video-uuid');
+    });
+
+    it('still deletes the draft and rethrows the original error when the compensating abort fails', async () => {
+      const failure = new Error('db down');
+      repository.setUploadId.mockRejectedValue(failure);
+      storage.abortMultipartUpload.mockRejectedValue(new Error('abort down'));
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+      await expect(service.initiateUpload('user-1', dto)).rejects.toBe(failure);
+
+      expect(repository.deleteDraft).toHaveBeenCalledWith('video-uuid');
     });
   });
 
@@ -273,6 +317,211 @@ describe('VideosService', () => {
             { part_number: 2, size: 10, etag: '"b"' },
           ],
         });
+      });
+    });
+  });
+
+  describe('completeUpload / abortUpload', () => {
+    const draft = (overrides: Partial<Video> = {}): Video =>
+      ({
+        id: 'video-uuid',
+        public_id: 'abcdefghijk',
+        status: VideoStatus.DRAFT,
+        size_bytes: 6291456,
+        part_count: 2,
+        upload_id: 'up-1',
+        upload_expires_at: new Date(Date.now() + 3600_000),
+        ...overrides,
+      }) as Video;
+    const completeDto = {
+      parts: [
+        { part_number: 1, etag: '"a"' },
+        { part_number: 2, etag: '"b"' },
+      ],
+    };
+    const processing = {
+      public_id: 'abcdefghijk',
+      status: VideoStatus.PROCESSING,
+      original_file_name: 'clip.mp4',
+      content_type: 'video/mp4',
+      size_bytes: 6291456,
+      duration_seconds: null,
+      width: null,
+      height: null,
+      video_codec: null,
+      container_format: null,
+      bitrate_bps: null,
+      error_code: null,
+      error_message: null,
+      created_at: new Date('2026-11-06T12:00:00.000Z'),
+      updated_at: new Date('2026-11-06T12:01:00.000Z'),
+    } as Video;
+
+    beforeEach(() => {
+      repository.findOwnedByPublicId.mockResolvedValue(draft());
+      storage.headObject.mockResolvedValue({ contentLength: 6291456 });
+      repository.findById.mockResolvedValue(processing);
+    });
+
+    describe('completeUpload', () => {
+      it('completes the multipart, moves to processing, enqueues the job and returns the video', async () => {
+        const result = await service.completeUpload(
+          'user-1',
+          'abcdefghijk',
+          completeDto,
+        );
+
+        expect(storage.completeMultipartUpload).toHaveBeenCalledWith(
+          'videos/video-uuid/original',
+          'up-1',
+          [
+            { partNumber: 1, etag: '"a"' },
+            { partNumber: 2, etag: '"b"' },
+          ],
+        );
+        expect(repository.transitionToProcessing).toHaveBeenCalledWith(
+          'video-uuid',
+          expect.any(Date) as Date,
+        );
+        expect(producer.enqueueProcessing).toHaveBeenCalledWith('video-uuid');
+        expect(result).toMatchObject({
+          id: 'abcdefghijk',
+          status: 'processing',
+          size_bytes: 6291456,
+          duration_seconds: null,
+          error_code: null,
+          created_at: '2026-11-06T12:00:00.000Z',
+          updated_at: '2026-11-06T12:01:00.000Z',
+        });
+      });
+
+      it.each([
+        'InvalidPart',
+        'InvalidPartOrder',
+        'EntityTooSmall',
+        'NoSuchUpload',
+      ])(
+        'maps the storage error %s to InvalidUploadPartsException without changing state',
+        async (name) => {
+          storage.completeMultipartUpload.mockRejectedValue(
+            Object.assign(new Error(name), { name }),
+          );
+
+          await expect(
+            service.completeUpload('user-1', 'abcdefghijk', completeDto),
+          ).rejects.toBeInstanceOf(InvalidUploadPartsException);
+          expect(repository.transitionToProcessing).not.toHaveBeenCalled();
+          expect(producer.enqueueProcessing).not.toHaveBeenCalled();
+        },
+      );
+
+      it('propagates unknown storage errors untouched', async () => {
+        const failure = new Error('storage down');
+        storage.completeMultipartUpload.mockRejectedValue(failure);
+
+        await expect(
+          service.completeUpload('user-1', 'abcdefghijk', completeDto),
+        ).rejects.toBe(failure);
+      });
+
+      it('marks the draft as error and fails when the stored size differs from the declared one', async () => {
+        storage.headObject.mockResolvedValue({ contentLength: 1 });
+
+        await expect(
+          service.completeUpload('user-1', 'abcdefghijk', completeDto),
+        ).rejects.toBeInstanceOf(UploadSizeMismatchException);
+
+        expect(repository.markDraftError).toHaveBeenCalledWith(
+          'video-uuid',
+          'UPLOAD_SIZE_MISMATCH',
+          expect.any(String) as string,
+        );
+        expect(repository.transitionToProcessing).not.toHaveBeenCalled();
+        expect(producer.enqueueProcessing).not.toHaveBeenCalled();
+      });
+
+      it('throws VideoNotInDraftException and does not enqueue when the guarded transition affects no row', async () => {
+        repository.transitionToProcessing.mockResolvedValue(0);
+
+        await expect(
+          service.completeUpload('user-1', 'abcdefghijk', completeDto),
+        ).rejects.toBeInstanceOf(VideoNotInDraftException);
+        expect(producer.enqueueProcessing).not.toHaveBeenCalled();
+      });
+
+      it('still returns the processing video when the enqueue fails', async () => {
+        producer.enqueueProcessing.mockRejectedValue(new Error('redis down'));
+        const logSpy = jest
+          .spyOn(Logger.prototype, 'error')
+          .mockImplementation(() => undefined);
+
+        const result = await service.completeUpload(
+          'user-1',
+          'abcdefghijk',
+          completeDto,
+        );
+
+        expect(result.status).toBe('processing');
+        expect(logSpy).toHaveBeenCalledWith(
+          expect.stringContaining('video-uuid'),
+          expect.any(String) as string,
+        );
+        logSpy.mockRestore();
+      });
+
+      it('rejects a video that is not an unexpired draft of the caller', async () => {
+        repository.findOwnedByPublicId.mockResolvedValue(
+          draft({ upload_expires_at: new Date(Date.now() - 1000) }),
+        );
+
+        await expect(
+          service.completeUpload('user-1', 'abcdefghijk', completeDto),
+        ).rejects.toBeInstanceOf(UploadExpiredException);
+        expect(storage.completeMultipartUpload).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('abortUpload', () => {
+      it('aborts the multipart and deletes the draft, even when the deadline has passed', async () => {
+        repository.findOwnedByPublicId.mockResolvedValue(
+          draft({ upload_expires_at: new Date(Date.now() - 1000) }),
+        );
+
+        await service.abortUpload('user-1', 'abcdefghijk');
+
+        expect(storage.abortMultipartUpload).toHaveBeenCalledWith(
+          'videos/video-uuid/original',
+          'up-1',
+        );
+        expect(repository.deleteDraft).toHaveBeenCalledWith('video-uuid');
+      });
+
+      it('rejects a video that already left draft without touching storage', async () => {
+        repository.findOwnedByPublicId.mockResolvedValue(
+          draft({ status: VideoStatus.PROCESSING }),
+        );
+
+        await expect(
+          service.abortUpload('user-1', 'abcdefghijk'),
+        ).rejects.toBeInstanceOf(VideoNotInDraftException);
+        expect(storage.abortMultipartUpload).not.toHaveBeenCalled();
+        expect(repository.deleteDraft).not.toHaveBeenCalled();
+      });
+
+      it('throws VideoNotInDraftException when a concurrent complete removed the draft state first', async () => {
+        repository.deleteDraft.mockResolvedValue(0);
+
+        await expect(
+          service.abortUpload('user-1', 'abcdefghijk'),
+        ).rejects.toBeInstanceOf(VideoNotInDraftException);
+      });
+
+      it('is not found for a video of another channel', async () => {
+        repository.findOwnedByPublicId.mockResolvedValue(null);
+
+        await expect(
+          service.abortUpload('user-1', 'abcdefghijk'),
+        ).rejects.toBeInstanceOf(VideoNotFoundException);
       });
     });
   });

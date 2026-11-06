@@ -1,6 +1,10 @@
+import { ListMultipartUploadsCommand } from '@aws-sdk/client-s3';
+import { getQueueToken } from '@nestjs/bullmq';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { Logger } from '@nestjs/common';
+import type { Queue } from 'bullmq';
 import { DataSource } from 'typeorm';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
 import { VerificationToken } from '../auth/entities/verification-token.entity';
@@ -9,19 +13,28 @@ import {
   ChannelNotFoundException,
   InvalidContentTypeException,
   InvalidPartNumberException,
+  InvalidUploadPartsException,
   UploadExpiredException,
   UploadSizeExceedsLimitException,
+  UploadSizeMismatchException,
   VideoNotFoundException,
   VideoNotInDraftException,
 } from '../common/exceptions/domain.exception';
+import redisConfig from '../config/redis.config';
 import storageConfig from '../config/storage.config';
 import uploadConfig from '../config/upload.config';
+import {
+  processVideoJobId,
+  VIDEO_PROCESSING_QUEUE,
+} from '../queue/queue.constants';
+import { VideoJobsProducer } from '../queue/video-jobs.producer';
 import { videoOriginalKey } from '../storage/storage.constants';
 import { StorageService } from '../storage/storage.service';
 import {
   cleanAllTables,
   createTestDataSource,
 } from '../test/create-test-data-source';
+import { obliterateQueues, uniqueQueuePrefix } from '../test/queue-test';
 import {
   createTestBucket,
   requestPresignedUrl,
@@ -31,10 +44,12 @@ import { User } from '../users/entities/user.entity';
 import { Video } from './entities/video.entity';
 import { VideoStatus } from './videos.constants';
 import { VideosModule } from './videos.module';
+import { VideosRepository } from './videos.repository';
 import { VideosService } from './videos.service';
 
 const ALL_ENTITIES = [User, Channel, RefreshToken, VerificationToken, Video];
 const MIN_PART = 5 * 1024 * 1024;
+const queuePrefix = uniqueQueuePrefix();
 
 // Objeto mutável compartilhado com o serviço: permite um part size de 5 MiB só nos testes que enviam partes reais.
 const uploadSettings = { ...uploadConfig() };
@@ -45,6 +60,7 @@ describe('VideosService (integration)', () => {
   let dataSource: DataSource;
   let service: VideosService;
   let storage: StorageService;
+  let processingQueue: Queue;
   let user: User;
   let channel: Channel;
   let counter = 0;
@@ -55,7 +71,7 @@ describe('VideosService (integration)', () => {
       imports: [
         ConfigModule.forRoot({
           isGlobal: true,
-          load: [storageConfig, uploadConfig],
+          load: [storageConfig, uploadConfig, redisConfig],
         }),
         TypeOrmModule.forRoot(createTestDataSource(ALL_ENTITIES).options),
         VideosModule,
@@ -67,13 +83,19 @@ describe('VideosService (integration)', () => {
       })
       .overrideProvider(uploadConfig.KEY)
       .useValue(uploadSettings)
+      .overrideProvider(redisConfig.KEY)
+      .useFactory({
+        factory: () => ({ ...redisConfig(), queuePrefix: queuePrefix }),
+      })
       .compile();
     dataSource = moduleRef.get(DataSource);
     service = moduleRef.get(VideosService);
     storage = moduleRef.get(StorageService);
+    processingQueue = moduleRef.get(getQueueToken(VIDEO_PROCESSING_QUEUE));
   });
 
   afterAll(async () => {
+    await obliterateQueues(processingQueue);
     await testBucket.cleanup();
     await moduleRef.close();
   });
@@ -81,6 +103,7 @@ describe('VideosService (integration)', () => {
   beforeEach(async () => {
     jest.restoreAllMocks();
     uploadSettings.partSizeBytes = uploadConfig().partSizeBytes;
+    await obliterateQueues(processingQueue);
     await cleanAllTables(dataSource);
     user = await dataSource.getRepository(User).save({
       email: `videos_svc_${++counter}@example.com`,
@@ -155,6 +178,26 @@ describe('VideosService (integration)', () => {
         ChannelNotFoundException,
       );
       expect(await videoCount()).toBe(0);
+    });
+
+    it('aborts the real multipart and leaves no row when saving the upload id fails', async () => {
+      const failure = new Error('db down');
+      jest
+        .spyOn(moduleRef.get(VideosRepository), 'setUploadId')
+        .mockRejectedValue(failure);
+      // Outros testes deixam multiparts abertos no bucket: compara a contagem antes e depois.
+      const openUploads = async () =>
+        (
+          await testBucket.client.send(
+            new ListMultipartUploadsCommand({ Bucket: testBucket.bucket }),
+          )
+        ).Uploads?.length ?? 0;
+      const before = await openUploads();
+
+      await expect(service.initiateUpload(user.id, dto)).rejects.toBe(failure);
+
+      expect(await videoCount()).toBe(0);
+      expect(await openUploads()).toBe(before);
     });
 
     it('leaves no draft row when CreateMultipartUpload fails', async () => {
@@ -279,6 +322,160 @@ describe('VideosService (integration)', () => {
       await expect(
         service.listUploadedParts(user.id, publicId),
       ).rejects.toBeInstanceOf(VideoNotInDraftException);
+    });
+  });
+
+  describe('completeUpload / abortUpload', () => {
+    const SIZE = MIN_PART + 1024 * 1024;
+
+    async function startUpload(sizeBytes = SIZE) {
+      uploadSettings.partSizeBytes = MIN_PART;
+      const started = await service.initiateUpload(user.id, {
+        file_name: 'clip.mp4',
+        size_bytes: sizeBytes,
+        content_type: 'video/mp4',
+      });
+      return started.id;
+    }
+
+    // Envia as partes reais pelo caminho de produção (URL pré-assinada) e devolve as ETags.
+    async function uploadParts(publicId: string, sizes: number[]) {
+      const { parts } = await service.getPartUrls(
+        user.id,
+        publicId,
+        sizes.map((_, i) => i + 1),
+      );
+      const completed: { part_number: number; etag: string }[] = [];
+      for (const [i, part] of parts.entries()) {
+        const put = await requestPresignedUrl(part.url, {
+          method: 'PUT',
+          body: Buffer.alloc(sizes[i], i + 1),
+          publicHost: new URL(part.url).host,
+        });
+        expect(put.status).toBe(200);
+        completed.push({
+          part_number: part.part_number,
+          etag: put.headers.etag as string,
+        });
+      }
+      return completed;
+    }
+
+    const loadVideo = (publicId: string) =>
+      dataSource.getRepository(Video).findOneByOrFail({ public_id: publicId });
+
+    it('completes a real 2-part upload, moves to processing and leaves exactly one job', async () => {
+      const publicId = await startUpload();
+      const parts = await uploadParts(publicId, [MIN_PART, 1024 * 1024]);
+
+      const result = await service.completeUpload(user.id, publicId, { parts });
+
+      expect(result).toMatchObject({ id: publicId, status: 'processing' });
+      const video = await loadVideo(publicId);
+      expect(video.status).toBe(VideoStatus.PROCESSING);
+      expect(video.upload_id).toBeNull();
+      expect(video.processing_started_at).toBeInstanceOf(Date);
+      expect(
+        (await storage.headObject(videoOriginalKey(video.id))).contentLength,
+      ).toBe(SIZE);
+      expect(await processingQueue.getJobCounts('waiting')).toEqual({
+        waiting: 1,
+      });
+      const job = await processingQueue.getJob(processVideoJobId(video.id));
+      expect(job?.data).toEqual({ videoId: video.id });
+    });
+
+    it('rejects a second complete with VideoNotInDraftException and does not add another job', async () => {
+      const publicId = await startUpload();
+      const parts = await uploadParts(publicId, [MIN_PART, 1024 * 1024]);
+      await service.completeUpload(user.id, publicId, { parts });
+
+      await expect(
+        service.completeUpload(user.id, publicId, { parts }),
+      ).rejects.toBeInstanceOf(VideoNotInDraftException);
+
+      expect(await processingQueue.getJobCounts('waiting')).toEqual({
+        waiting: 1,
+      });
+    });
+
+    it('turns the video into error with UPLOAD_SIZE_MISMATCH when the stored object has another size', async () => {
+      const publicId = await startUpload();
+      const parts = await uploadParts(publicId, [MIN_PART, 512 * 1024]);
+
+      await expect(
+        service.completeUpload(user.id, publicId, { parts }),
+      ).rejects.toBeInstanceOf(UploadSizeMismatchException);
+
+      const video = await loadVideo(publicId);
+      expect(video.status).toBe(VideoStatus.ERROR);
+      expect(video.error_code).toBe('UPLOAD_SIZE_MISMATCH');
+      expect(await processingQueue.getJobCounts('waiting')).toEqual({
+        waiting: 0,
+      });
+    });
+
+    it('maps a part list rejected by the storage to InvalidUploadPartsException and keeps the draft', async () => {
+      const publicId = await startUpload();
+      const parts = await uploadParts(publicId, [MIN_PART, 1024 * 1024]);
+
+      await expect(
+        service.completeUpload(user.id, publicId, {
+          parts: [parts[0], { part_number: 2, etag: '"deadbeef"' }],
+        }),
+      ).rejects.toBeInstanceOf(InvalidUploadPartsException);
+
+      expect((await loadVideo(publicId)).status).toBe(VideoStatus.DRAFT);
+    });
+
+    it('still returns the processing video when the enqueue fails', async () => {
+      const publicId = await startUpload();
+      const parts = await uploadParts(publicId, [MIN_PART, 1024 * 1024]);
+      jest
+        .spyOn(moduleRef.get(VideoJobsProducer), 'enqueueProcessing')
+        .mockRejectedValue(new Error('redis down'));
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
+      const result = await service.completeUpload(user.id, publicId, { parts });
+
+      expect(result.status).toBe('processing');
+      expect((await loadVideo(publicId)).status).toBe(VideoStatus.PROCESSING);
+    });
+
+    it('aborts an upload: removes the row and the multipart no longer exists in the storage', async () => {
+      const publicId = await startUpload();
+      const video = await loadVideo(publicId);
+
+      await service.abortUpload(user.id, publicId);
+
+      expect(await videoCount()).toBe(0);
+      await expect(
+        storage.listParts(videoOriginalKey(video.id), video.upload_id!),
+      ).rejects.toMatchObject({ name: 'NoSuchUpload' });
+    });
+
+    it('aborts an upload whose multipart is already gone from the storage', async () => {
+      const publicId = await startUpload();
+      const video = await loadVideo(publicId);
+      await storage.abortMultipartUpload(
+        videoOriginalKey(video.id),
+        video.upload_id!,
+      );
+
+      await service.abortUpload(user.id, publicId);
+
+      expect(await videoCount()).toBe(0);
+    });
+
+    it('refuses to abort a video that is already processing', async () => {
+      const publicId = await startUpload();
+      const parts = await uploadParts(publicId, [MIN_PART, 1024 * 1024]);
+      await service.completeUpload(user.id, publicId, { parts });
+
+      await expect(
+        service.abortUpload(user.id, publicId),
+      ).rejects.toBeInstanceOf(VideoNotInDraftException);
+      expect(await videoCount()).toBe(1);
     });
   });
 });
