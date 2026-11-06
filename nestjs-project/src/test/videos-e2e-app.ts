@@ -24,6 +24,7 @@ export interface VideosE2eApp {
   moduleRef: TestingModule;
   dataSource: DataSource;
   testBucket: TestBucket;
+  queuePrefix: string;
   processingQueue: Queue;
   // Zera o estado entre testes: tabelas, contador do throttler e fila do prefixo exclusivo.
   reset: () => Promise<void>;
@@ -71,6 +72,7 @@ export async function createVideosE2eApp(): Promise<VideosE2eApp> {
     moduleRef,
     dataSource,
     testBucket,
+    queuePrefix,
     processingQueue,
     reset: async () => {
       await cleanAllTables(dataSource);

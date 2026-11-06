@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 28/31 completed
+**SIs:** 29/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -241,9 +241,13 @@
   - O `Last sync` do spec não foi alterado (a skill não manda).
 
 ### SI-03.29 — Pipeline ponta a ponta: upload multipart, processamento in-process e streaming
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 3 e2e passing em test/video-pipeline.e2e-spec.ts (AppModule + WorkerModule in-process; DB, Redis, storage e ffmpeg reais; 3 execuções seguidas estáveis, com `video-worker` parado); tsc exit 0; lint exit 0
+- **Observations:**
+  - O `AppModule` (via `createVideosE2eApp`) e o `WorkerModule` sobem como dois `TestingModule` no mesmo processo, compartilhando bucket de teste e prefixo de fila; para isso o helper passou a expor `queuePrefix`. Dois módulos (e não um com os dois) evitam duplicar `ConfigModule`/`TypeOrmModule.forRoot` no mesmo contexto.
+  - Cenários: fluxo completo (PUT real de 2 partes, `upload/parts`, `complete`, polling até `ready`, `duration_seconds`/`bitrate_bps`, thumbnail `image/jpeg` no storage, stream `302` + `Range` `206` com `Content-Range` total, download com `Content-Disposition`), corrompido (`error`/`UNREADABLE_MEDIA`, stream `404`) e retomada (parte 1, `ListParts`, parte 2, `complete`, `ready`).
+  - O `afterAll` faz `obliterate` das filas de processamento e manutenção (scheduler do sweeper) e remove o bucket de teste; `cleanAllTables` já limpava `videos`.
+  - O sweeper do `WorkerModule` in-process usa a fila de manutenção do prefixo exclusivo, sem interferir no `video-worker` do Compose (que deve ficar parado por causa do banco compartilhado).
 
 ### SI-03.30 — Regenerar openapi.json com os endpoints de vídeo
 - **Status:** pending
