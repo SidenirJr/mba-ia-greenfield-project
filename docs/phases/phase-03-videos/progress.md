@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 2/31 completed
+**SIs:** 3/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -23,9 +23,12 @@
   - Volumes nomeados `minio-data` e `redis-data` declarados no `compose.yaml`; `nestjs-api` agora depende de `minio-init` (completed) e `redis` (healthy).
 
 ### SI-03.3 — Dependências de fila, namespaces de configuração e validação Joi
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 12 novos em src/config/env.validation.integration-spec.ts (16 no arquivo; src/config 19/19) + e2e app.e2e-spec.ts 1/1; tsc exit 0; lint exit 0
+- **Observations:**
+  - Instalados bullmq 6.7.x, @nestjs/bullmq 12.x e ioredis 5.x; a compatibilidade bullmq 6 x ioredis 5 será verificada no primeiro teste de integração da fila (SI-03.9), conforme library-refs.
+  - Os namespaces `storage`, `redis`, `upload` e `worker` seguem o padrão `registerAs` com `parseInt` e defaults da Fase 01; `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `REDIS_*` e `S3_FORCE_PATH_STYLE` têm default no schema; o `.env.example` já tinha as `S3_*`/`REDIS_*` do SI-03.1/03.2 e agora também traz `QUEUE_PREFIX`, `UPLOAD_*`, `PRESIGN_EXPIRES_SECONDS` e as variáveis do worker (o `.env` local foi atualizado igualmente).
+  - `requiredEnv` do spec existente foi estendido com as três `S3_*` obrigatórias (consequência direta do schema).
 
 ### SI-03.4 — StorageModule: clientes S3 (interno + presign) e StorageService
 - **Status:** pending
