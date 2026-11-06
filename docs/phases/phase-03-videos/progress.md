@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 23/31 completed
+**SIs:** 24/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -200,9 +200,13 @@
   - Concurrency do worker fica no default do BullMQ (1); o plano não define outro valor. O entrypoint `src/worker.ts`/shutdown hooks e o serviço Compose são do SI-03.25.
 
 ### SI-03.24 — Sweeper: job scheduler de rascunhos vencidos e reconciliação de processing
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 8 novos passing (video-sweeper.service.spec 4 unit; video-sweeper.service.integration-spec 4 com WorkerModule in-process e Redis/DB/storage reais, 3 execuções seguidas estáveis); src/worker 43/43; tsc exit 0; lint exit 0
+- **Observations:**
+  - **Bug do SI-03.23 achado e corrigido:** `WorkerModule` sozinho (sem `AppModule`) falhava ao conectar (`Entity metadata for Channel#user was not found`) porque ninguém registrava `User`; o spec do processor passou porque importa o `AppModule`. Corrigido com `TypeOrmModule.forFeature([User])` no `WorkerModule`; o spec novo importa só o `WorkerModule` e cobre a regressão.
+  - `sweep(now)` roda as duas etapas de forma independente (falha de uma não impede a outra) e relança o primeiro erro no fim, para o retry do job (`attempts: 3`, `backoff: 3000`, `removeOnFail: 1000`); lote fixo `SWEEP_BATCH_LIMIT = 100` por varredura (comentário `shortcut:`; o plano não define o limite).
+  - O scheduler `video-sweeper` é registrado em `WorkerModule.onModuleInit` com `upsertJobScheduler` (conferido no context7 `/taskforcesh/bullmq`); a primeira varredura dispara no boot, por isso o spec espera esse job antes de semear linhas e pausa a fila `video-processing` para o job re-enfileirado ficar `waiting` (vivo) sem ser consumido.
+  - O spec cobre `ensureProcessingJob` com job vivo (sem duplicar); o ramo de registro `failed`/`completed` já é coberto no spec do produtor (SI-03.9).
 
 ### SI-03.25 — Entrypoint worker.ts e serviço video-worker no Compose
 - **Status:** pending
