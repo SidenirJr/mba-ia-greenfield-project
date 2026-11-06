@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 3/31 completed
+**SIs:** 4/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -31,9 +31,13 @@
   - `requiredEnv` do spec existente foi estendido com as três `S3_*` obrigatórias (consequência direta do schema).
 
 ### SI-03.4 — StorageModule: clientes S3 (interno + presign) e StorageService
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 12 novos passing (storage.service.spec 7, storage.service.integration-spec 4, storage.module.spec 1) + spike do SI-03.1 5/5; tsc exit 0; lint exit 0
+- **Observations:**
+  - Ambos os clientes usam `requestChecksumCalculation`/`responseChecksumValidation: 'WHEN_REQUIRED'` (mesmo achado do spike); o cliente interno respeita `S3_FORCE_PATH_STYLE`, o de presign força path-style.
+  - `headObject` devolve `{ contentLength, contentType }` e deixa o erro do SDK propagar (o mapeamento de erros de domínio fica no VideosService); `listParts` devolve `{ partNumber, etag, size }`; `completeMultipartUpload` recebe `{ partNumber, etag }[]`.
+  - A paginação de `listParts` é coberta no unit com cliente mockado (a integração real com mais de 1000 partes foi considerada pesada demais); o bucket de teste dedicado (`test-<uuid>`) é criado e removido pelo helper `src/test/storage-test.ts`, e os testes sobrescrevem `storageConfig.KEY` para apontar para ele.
+  - Consultado context7 (`/aws/aws-sdk-js-v3`): paginação de `ListParts` por `PartNumberMarker`/`NextPartNumberMarker` e `getSignedUrl` com `expiresIn` conforme implementado.
 
 ### SI-03.5 — Entidade Video, migration CreateVideos e VideosModule base
 - **Status:** pending
