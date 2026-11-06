@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 8/31 completed
+**SIs:** 9/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -71,9 +71,14 @@
   - Usa `dataSource.getRepository(Channel).findOneBy({ user_id })` para não alterar o construtor existente (per TD-11).
 
 ### SI-03.9 — Fila: QueueModule e produtor de jobs de processamento
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 9 novos passing em src/queue/video-jobs.producer.integration-spec.ts (Redis real); tsc exit 0; lint exit 0
+- **Observations:** 
+  - **Desvio (infra de teste):** `@nestjs/bullmq@12.0.1` e `@nestjs/bull-shared` são ESM-only (`type: module`), contrariando a nota da library-refs de que não há dependência ESM-only; o Jest (CJS) falhava com `Unexpected token 'export'`. Solução: `transformIgnorePatterns` + transform ts-jest com `allowJs`/`module: commonjs` restritos a esses dois pacotes, em `package.json` (jest) e `test/jest-e2e.json`. Em runtime Node 25 o `require` de ESM funciona (`require('@nestjs/bullmq')` OK no container). Nenhuma TD alterada.
+  - **jobId:** a doc do BullMQ (context7) e o teste real confirmam que ':' é rejeitado (`Custom Id cannot contain`); o hífen é aceito, então o id fica `process-video-{videoId}`.
+  - `bullmq@6.7.1` sobe contra `ioredis@5.11.1` sem problemas. No bullmq 6 o `Queue` não expõe mais `.client` (há uma abstração `backend`); o teste verifica `opts.connection` (host `redis`, porta 6379), o prefixo e um round trip real (`getJobCounts`).
+  - `jitter: 0.5` no backoff é o valor de exemplo da doc do BullMQ (o plano só cita `jitter`); constante `PROCESSING_BACKOFF_JITTER` com comentário `shortcut:`.
+  - `QueueModule` ainda não é importado por `AppModule`/`VideosModule` (o plano o liga no SI-03.12, quando `VideosService` precisar do produtor). O worker temporário dos testes (failed/completed) é criado só no spec.
 
 ### SI-03.10 — Iniciar upload: planejador de partes e VideosService.initiateUpload
 - **Status:** pending

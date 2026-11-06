@@ -4,7 +4,20 @@
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "transform": {
+    "node_modules/@nestjs/(bullmq|bull-shared)/.+\\.js$": [
+      "ts-jest",
+      {
+        "tsconfig": {
+          "allowJs": true,
+          "module": "commonjs",
+          "esModuleInterop": true,
+          "target": "ES2023"
+        },
+        "diagnostics": false
+      }
+    ],
     "^.+\\.(t|j)s$": "ts-jest"
   },
-  "setupFiles": ["dotenv/config"]
+  "setupFiles": ["dotenv/config"],
+  "transformIgnorePatterns": ["/node_modules/(?!@nestjs/(bullmq|bull-shared)/)"]
 }
