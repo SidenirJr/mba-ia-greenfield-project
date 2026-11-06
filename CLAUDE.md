@@ -10,7 +10,7 @@ More info in the project overview: [docs/project-plan.md](docs/project-plan.md)
 
 This is a monorepo with two main areas:
 
-- `nestjs-project/` — Backend API (NestJS 11, TypeScript, Express). Contains modules for users, channels, videos, comments, etc.
+- `nestjs-project/` — Backend API (NestJS 11, TypeScript, Express). Modules in `src/`: `auth`, `users`, `channels`, `videos`, `storage`, `queue`, `media`, `worker` (video processing, separate process entrypoint `src/worker.ts`), plus `config`, `common`, `mail`, `database`. Comments, subscriptions and likes are not implemented yet.
 - `docs/` — Project documentation, architecture diagrams, and planning.
 - `next-frontend/` (Next.js) — not yet initialized
 
@@ -20,11 +20,30 @@ See `docs/diagrams/software-arch.mermaid` for the full diagram. Key containers:
 
 - **Frontend** (Next.js) → calls API via REST, streams from Object Storage
 - **API** (Nest.js) → business rules, auth, reads/writes DB, uploads to storage, publishes jobs to queue, sends emails
-- **Video Worker** (FFmpeg) → consumes jobs from queue, processes videos, updates DB and storage
+- **Video Worker** (FFmpeg) → separate process (`nestjs-project/src/worker.ts`, Compose service `video-worker`) that consumes jobs from the queue, runs `ffprobe`/`ffmpeg` (duration/metadata + thumbnail), updates the DB and storage, and runs the sweeper (aborts expired drafts, re-enqueues stale `processing` videos)
 - **Database** (PostgreSQL) → users, channels, videos, comments, likes
-- **Object Storage** (S3/MinIO) → video files and thumbnails
-- **Message Queue** (TBD) → video processing job queue
+- **Object Storage** (S3-compatible) → video files and thumbnails. Runs as the Compose service `minio` using the `pgsty/silo` image (a maintained fork of MinIO, whose upstream was archived), with `minio-init` (`pgsty/mc`) creating the bucket and its CORS. This fork satisfies the "S3/MinIO" requirement of the project statement; the API talks S3 through the AWS SDK v3, so any S3-compatible engine works.
+- **Message Queue** → BullMQ on Redis (Compose service `redis`, not published on the host). Queues `video-processing` (jobs `video.process`) and `video-maintenance` (sweeper scheduler)
 - **Email Service** (SMTP) → account confirmation and password recovery
+
+## Videos Module (Phase 03)
+
+Upload goes **directly to the storage** (S3 multipart with presigned part URLs, up to 10 GiB) — the API never carries the file bytes. Stream and download are redirects to presigned storage URLs, which serve `Range` (`206`) themselves. Video status lifecycle: `draft` → `processing` → `ready` | `error`. The public video id is an 11-character base62 string.
+
+Endpoints (`nestjs-project/src/videos/videos.controller.ts`):
+
+| Method and route | Auth | Success | Purpose |
+|------------------|------|---------|---------|
+| `POST /videos` | JWT | 201 | Create the draft and open the multipart upload (returns the part plan) |
+| `POST /videos/:id/upload/part-urls` | JWT, owner | 200 | Presigned PUT URL per part number |
+| `GET /videos/:id/upload/parts` | JWT, owner | 200 | Part plan and parts already stored (resume) |
+| `POST /videos/:id/upload/complete` | JWT, owner | 202 | Complete the multipart, move to `processing`, enqueue the job |
+| `DELETE /videos/:id/upload` | JWT, owner | 204 | Abort the upload and delete the draft |
+| `GET /videos/:id` | JWT, owner | 200 | Status and metadata |
+| `GET /videos/:id/stream` | Public | 302 | Redirect to the presigned `GetObject` URL (only `ready` videos) |
+| `GET /videos/:id/download` | Public | 302 | Same, forcing `Content-Disposition: attachment` |
+
+HTTP errors follow the `ApiErrorEnvelope` (`VIDEO_NOT_FOUND`, `UPLOAD_EXPIRED`, `UPLOAD_SIZE_MISMATCH`, etc.); processing failures are stored on the video as `error_code` and read via `GET /videos/:id`; the contract is versioned in `nestjs-project/openapi.json` (`npm run openapi:export`). Infrastructure details, env vars and test rules are in `nestjs-project/CLAUDE.md`.
 
 ## Docker Networking
 
@@ -50,7 +69,7 @@ This applies to all environment variables, configuration files, and code that re
 A change is only considered complete when **all** of the following pass:
 
 1. The relevant test suite passes (unit + integration + e2e affected by the change).
-2. The full test suite passes before finishing the task.
+2. The full test suite passes before finishing the task. Run suites with the `video-worker` Compose service stopped (`docker compose stop video-worker`) and start it again afterwards (see `nestjs-project/CLAUDE.md`).
 3. TypeScript compiles cleanly: `npx tsc --noEmit` exits with code 0. Compilation errors must never be left as debt for future tasks.
 4. Lint passes: `npm run lint`.
 

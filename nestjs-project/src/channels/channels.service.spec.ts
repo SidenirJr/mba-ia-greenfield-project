@@ -1,8 +1,15 @@
-import { QueryFailedError } from 'typeorm';
+import { DataSource, QueryFailedError } from 'typeorm';
 import { ChannelsService } from './channels.service';
 import { Channel } from './entities/channel.entity';
+import { ChannelNotFoundException } from '../common/exceptions/domain.exception';
 
-function makeManager(overrides: Record<string, jest.Mock> = {}): any {
+interface MockManager {
+  findOne: jest.Mock;
+  create: jest.Mock;
+  save: jest.Mock;
+}
+
+function makeManager(overrides: Partial<MockManager> = {}): MockManager {
   return {
     findOne: jest.fn(),
     create: jest.fn(),
@@ -24,16 +31,20 @@ function makeChannel(nickname: string): Channel {
 }
 
 function makeUniqueError(): QueryFailedError {
-  const err = new QueryFailedError('INSERT', [], new Error()) as any;
-  err.code = '23505';
-  err.detail = 'Key (nickname)=(abc) already exists.';
+  const err = new QueryFailedError('INSERT', [], new Error());
+  Object.assign(err, {
+    code: '23505',
+    detail: 'Key (nickname)=(abc) already exists.',
+  });
   return err;
 }
 
-function makeDataSource(manager: any): any {
+function makeDataSource(manager: MockManager): DataSource {
   return {
-    transaction: jest.fn((cb: (manager: any) => Promise<any>) => cb(manager)),
-  };
+    transaction: jest.fn((cb: (manager: MockManager) => Promise<unknown>) =>
+      cb(manager),
+    ),
+  } as unknown as DataSource;
 }
 
 describe('ChannelsService', () => {
@@ -130,6 +141,36 @@ describe('ChannelsService', () => {
         service.createChannel('user-id', 'carol@example.com'),
       ).rejects.toThrow('Connection lost');
       expect(manager.save).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('getByUserId', () => {
+    function makeFindOneByDataSource(result: Channel | null) {
+      const findOneBy = jest.fn().mockResolvedValue(result);
+      const dataSource = {
+        getRepository: jest.fn().mockReturnValue({ findOneBy }),
+      } as unknown as DataSource;
+      return { dataSource, findOneBy };
+    }
+
+    it('returns the channel found by user_id', async () => {
+      const channel = makeChannel('owner');
+      const { dataSource, findOneBy } = makeFindOneByDataSource(channel);
+
+      const result = await new ChannelsService(dataSource).getByUserId(
+        'user-id',
+      );
+
+      expect(findOneBy).toHaveBeenCalledWith({ user_id: 'user-id' });
+      expect(result).toBe(channel);
+    });
+
+    it('throws ChannelNotFoundException when the user has no channel', async () => {
+      const { dataSource } = makeFindOneByDataSource(null);
+
+      await expect(
+        new ChannelsService(dataSource).getByUserId('user-id'),
+      ).rejects.toBeInstanceOf(ChannelNotFoundException);
     });
   });
 });
