@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 17/31 completed
+**SIs:** 18/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -135,7 +135,7 @@
 - **Status:** completed
 - **Tests:** 8 e2e passing em test/videos-complete-upload.e2e-spec.ts (spec videos-complete-upload.plan.md); tsc exit 0; lint exit 0
 - **Observations:** 
-  - **Desvio (dependência de spec):** o spec manda usar `generateMultipartVideo()` (SI-03.19) e `GET /videos/:id` (SI-03.18), ambos posteriores na ordem de execução e fora das dependências declaradas do SI-03.16. O e2e usa um `Buffer` de 6 MiB (o worker não roda nele, o conteúdo não importa) e confere o `error` do cenário 1.5 direto na linha do banco; os dois pontos serão alinhados ao spec nos SIs 03.18/03.19.
+  - **Desvio (dependência de spec):** o spec manda usar `generateMultipartVideo()` (SI-03.19) e `GET /videos/:id` (SI-03.18), ambos posteriores na ordem de execução e fora das dependências declaradas do SI-03.16. O e2e usa um `Buffer` de 6 MiB (o worker não roda nele, o conteúdo não importa); o passo 2 do cenário 1.5 foi alinhado ao spec (GET /videos/:id) no SI-03.18, e a troca pelo `generateMultipartVideo()` fica para o SI-03.19.
   - Os PUTs enviam bytes reais ao storage (5 MiB + 1 MiB); o cenário de divergência de tamanho envia 1 KiB a menos que o declarado e verifica `status = error`/`error_code = UPLOAD_SIZE_MISMATCH`.
   - Registrado do SI-03.12 e não alterado: um `complete` concorrente pode virar 400 `INVALID_UPLOAD_PARTS` (NoSuchUpload) em vez de 409, consequência do mapeamento exigido pelo plano.
 
@@ -143,13 +143,16 @@
 - **Status:** completed
 - **Tests:** 4 e2e passing em test/videos-abort-upload.e2e-spec.ts (spec videos-abort-upload.plan.md); tsc exit 0; lint exit 0
 - **Observations:** 
-  - **Desvio (dependência de spec):** o passo 2 do cenário 1.1 usa `GET /videos/:id` (SI-03.18, posterior); o e2e confere o 404 do vídeo pela ausência da linha no banco e será alinhado ao spec no SI-03.18.
+  - **Desvio (dependência de spec):** o passo 2 do cenário 1.1 usa `GET /videos/:id` (SI-03.18, posterior); o e2e foi alinhado ao spec (GET /videos/:id → 404) no SI-03.18.
   - O cenário 1.1 confere no storage real que o `upload_id` anterior falha com `NoSuchUpload` (via `StorageService.listParts`).
 
 ### SI-03.18 — Endpoint GET /videos/:id (status do dono)
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 6 e2e passing em test/videos-get-status.e2e-spec.ts; 6 novos em src/videos (unit 3 em videos.service.spec, integration 3 em videos.service.integration-spec); src/videos service specs 57/57; tsc exit 0; lint exit 0
+- **Observations:** 
+  - O `getOwnedDraft` e o `getOwnedVideo` passaram a compartilhar o privado `findOwned` (resolve canal + busca filtrada por canal + 404), sem mudança de comportamento do primeiro.
+  - Os vídeos `ready`/`error` do e2e são semeados com `save` (o `insert` do TypeORM não aceita o objeto jsonb `metadata` no tipo).
+  - Alinhei os e2e dos SIs 03.16 (cenário 1.5) e 03.17 (cenário 1.1) ao spec, passando a usar `GET /videos/:id` agora que ele existe; `test/videos-*` 35/35.
 
 ### SI-03.19 — Helper de testes: fixtures de vídeo geradas com ffmpeg lavfi
 - **Status:** pending

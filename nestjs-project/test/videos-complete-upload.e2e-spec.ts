@@ -181,9 +181,14 @@ describe('videos-complete-upload', () => {
       .expect(409);
 
     expect((res.body as CompleteBody).error).toBe('UPLOAD_SIZE_MISMATCH');
-    const video = await findVideo(videoId);
-    expect(video.status).toBe(VideoStatus.ERROR);
-    expect(video.error_code).toBe('UPLOAD_SIZE_MISMATCH');
+    const status = await request(ctx.app.getHttpServer())
+      .get(`/videos/${videoId}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    expect(status.body).toMatchObject({
+      status: 'error',
+      error_code: 'UPLOAD_SIZE_MISMATCH',
+    });
   });
 
   it('other-user-gets-404', async () => {

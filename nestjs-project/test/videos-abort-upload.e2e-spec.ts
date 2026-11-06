@@ -64,6 +64,11 @@ describe('videos-abort-upload', () => {
     const res = await abort(ownerToken).expect(204);
 
     expect(res.body).toEqual({});
+    const status = await request(ctx.app.getHttpServer())
+      .get(`/videos/${videoId}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(404);
+    expect((status.body as ErrorBody).error).toBe('VIDEO_NOT_FOUND');
     expect(await findVideo()).toBeNull();
     await expect(
       storage.listParts(key, draft!.upload_id!),

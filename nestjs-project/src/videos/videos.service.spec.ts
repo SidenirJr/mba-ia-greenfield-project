@@ -525,4 +525,84 @@ describe('VideosService', () => {
       });
     });
   });
+
+  describe('getOwnedVideo', () => {
+    it('maps the entity to the response without upload_id or metadata', async () => {
+      const created = new Date('2026-11-06T12:00:00.000Z');
+      const updated = new Date('2026-11-06T12:05:00.000Z');
+      repository.findOwnedByPublicId.mockResolvedValue({
+        id: 'video-uuid',
+        public_id: 'abcdefghijk',
+        status: VideoStatus.READY,
+        original_file_name: 'clip.mp4',
+        content_type: 'video/mp4',
+        size_bytes: 1024,
+        duration_seconds: 12.5,
+        width: 1280,
+        height: 720,
+        video_codec: 'h264',
+        container_format: 'mov,mp4,m4a,3gp,3g2,mj2',
+        bitrate_bps: 800000,
+        error_code: null,
+        error_message: null,
+        upload_id: 'up-1',
+        metadata: { streams: [] },
+        created_at: created,
+        updated_at: updated,
+      } as unknown as Video);
+
+      const result = await service.getOwnedVideo('user-1', 'abcdefghijk');
+
+      expect(repository.findOwnedByPublicId).toHaveBeenCalledWith(
+        'abcdefghijk',
+        'channel-1',
+      );
+      expect(result).toEqual({
+        id: 'abcdefghijk',
+        status: VideoStatus.READY,
+        original_file_name: 'clip.mp4',
+        content_type: 'video/mp4',
+        size_bytes: 1024,
+        duration_seconds: 12.5,
+        width: 1280,
+        height: 720,
+        video_codec: 'h264',
+        container_format: 'mov,mp4,m4a,3gp,3g2,mj2',
+        bitrate_bps: 800000,
+        error_code: null,
+        error_message: null,
+        created_at: '2026-11-06T12:00:00.000Z',
+        updated_at: '2026-11-06T12:05:00.000Z',
+      });
+      expect(result).not.toHaveProperty('upload_id');
+      expect(result).not.toHaveProperty('metadata');
+    });
+
+    it('is not found for a missing video or one of another channel', async () => {
+      repository.findOwnedByPublicId.mockResolvedValue(null);
+
+      await expect(
+        service.getOwnedVideo('user-1', 'abcdefghijk'),
+      ).rejects.toBeInstanceOf(VideoNotFoundException);
+    });
+
+    it('does not require a draft: an error video is readable', async () => {
+      repository.findOwnedByPublicId.mockResolvedValue({
+        public_id: 'abcdefghijk',
+        status: VideoStatus.ERROR,
+        error_code: 'UNREADABLE_MEDIA',
+        error_message: 'Could not read the media',
+        created_at: new Date(),
+        updated_at: new Date(),
+      } as Video);
+
+      const result = await service.getOwnedVideo('user-1', 'abcdefghijk');
+
+      expect(result).toMatchObject({
+        status: VideoStatus.ERROR,
+        error_code: 'UNREADABLE_MEDIA',
+        error_message: 'Could not read the media',
+      });
+    });
+  });
 });

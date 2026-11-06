@@ -478,4 +478,75 @@ describe('VideosService (integration)', () => {
       expect(await videoCount()).toBe(1);
     });
   });
+
+  describe('getOwnedVideo', () => {
+    it('reads the real row of the caller channel as a response without upload_id', async () => {
+      const { id: publicId } = await service.initiateUpload(user.id, {
+        ...dto,
+        size_bytes: 1024,
+      });
+
+      const result = await service.getOwnedVideo(user.id, publicId);
+
+      expect(result).toMatchObject({
+        id: publicId,
+        status: VideoStatus.DRAFT,
+        original_file_name: 'clip.mp4',
+        size_bytes: 1024,
+        duration_seconds: null,
+        error_code: null,
+      });
+      expect(result).not.toHaveProperty('upload_id');
+    });
+
+    it('returns numbers for the numeric and bigint columns of a ready video', async () => {
+      const { id: publicId } = await service.initiateUpload(user.id, {
+        ...dto,
+        size_bytes: 1024,
+      });
+      await dataSource.getRepository(Video).update(
+        { public_id: publicId },
+        {
+          status: VideoStatus.READY,
+          duration_seconds: 12.5,
+          width: 1280,
+          height: 720,
+          bitrate_bps: 800000,
+        },
+      );
+
+      const result = await service.getOwnedVideo(user.id, publicId);
+
+      expect(result).toMatchObject({
+        status: VideoStatus.READY,
+        duration_seconds: 12.5,
+        width: 1280,
+        height: 720,
+        bitrate_bps: 800000,
+      });
+    });
+
+    it('answers VideoNotFoundException for another channel and for an unknown id', async () => {
+      const { id: publicId } = await service.initiateUpload(user.id, {
+        ...dto,
+        size_bytes: 1024,
+      });
+      const other = await dataSource.getRepository(User).save({
+        email: `videos_svc_other_${counter}@example.com`,
+        password: 'hashed',
+      });
+      await dataSource.getRepository(Channel).save({
+        name: 'Other',
+        nickname: `othersvcchan${counter}`,
+        user_id: other.id,
+      });
+
+      await expect(
+        service.getOwnedVideo(other.id, publicId),
+      ).rejects.toBeInstanceOf(VideoNotFoundException);
+      await expect(
+        service.getOwnedVideo(user.id, 'aaaaaaaaaaa'),
+      ).rejects.toBeInstanceOf(VideoNotFoundException);
+    });
+  });
 });

@@ -243,4 +243,34 @@ export class VideosController {
   ): Promise<void> {
     await this.videosService.abortUpload(user.sub, id);
   }
+
+  @Get(':id')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Get the video status',
+    description:
+      'Returns the status and metadata of a video owned by the caller, so the owner can follow it from draft to ready or error.',
+  })
+  @ApiParam({ name: 'id', description: 'Public id of the video' })
+  @ApiResponse({
+    status: 200,
+    description: 'Status and metadata of the video',
+    type: VideoResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found or owned by another channel',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async getOwnedVideo(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ): Promise<VideoResponseDto> {
+    return this.videosService.getOwnedVideo(user.sub, id);
+  }
 }

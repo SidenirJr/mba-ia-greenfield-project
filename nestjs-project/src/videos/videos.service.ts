@@ -223,6 +223,13 @@ export class VideosService {
     if (deleted === 0) throw new VideoNotInDraftException();
   }
 
+  async getOwnedVideo(
+    userId: string,
+    publicId: string,
+  ): Promise<VideoResponseDto> {
+    return this.toVideoResponse(await this.findOwned(userId, publicId));
+  }
+
   private toVideoResponse(video: Video): VideoResponseDto {
     return {
       id: video.public_id,
@@ -257,18 +264,13 @@ export class VideosService {
     }
   }
 
-  // Ponto único de propriedade/estado/validade; vídeo alheio e inexistente são indistinguíveis (404).
+  // Ponto único de estado/validade do rascunho do dono.
   private async getOwnedDraft(
     userId: string,
     publicId: string,
     options: { requireValid: boolean } = { requireValid: true },
   ): Promise<Video> {
-    const channel = await this.channelsService.getByUserId(userId);
-    const video = await this.videosRepository.findOwnedByPublicId(
-      publicId,
-      channel.id,
-    );
-    if (!video) throw new VideoNotFoundException();
+    const video = await this.findOwned(userId, publicId);
     if (video.status !== VideoStatus.DRAFT) {
       throw new VideoNotInDraftException();
     }
@@ -279,6 +281,17 @@ export class VideosService {
     ) {
       throw new UploadExpiredException();
     }
+    return video;
+  }
+
+  // Vídeo alheio e inexistente são indistinguíveis (404, TD-11).
+  private async findOwned(userId: string, publicId: string): Promise<Video> {
+    const channel = await this.channelsService.getByUserId(userId);
+    const video = await this.videosRepository.findOwnedByPublicId(
+      publicId,
+      channel.id,
+    );
+    if (!video) throw new VideoNotFoundException();
     return video;
   }
 }
