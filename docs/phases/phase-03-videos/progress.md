@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 16/31 completed
+**SIs:** 17/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -140,9 +140,11 @@
   - Registrado do SI-03.12 e não alterado: um `complete` concorrente pode virar 400 `INVALID_UPLOAD_PARTS` (NoSuchUpload) em vez de 409, consequência do mapeamento exigido pelo plano.
 
 ### SI-03.17 — Endpoint DELETE /videos/:id/upload (abortar)
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 4 e2e passing em test/videos-abort-upload.e2e-spec.ts (spec videos-abort-upload.plan.md); tsc exit 0; lint exit 0
+- **Observations:** 
+  - **Desvio (dependência de spec):** o passo 2 do cenário 1.1 usa `GET /videos/:id` (SI-03.18, posterior); o e2e confere o 404 do vídeo pela ausência da linha no banco e será alinhado ao spec no SI-03.18.
+  - O cenário 1.1 confere no storage real que o `upload_id` anterior falha com `NoSuchUpload` (via `StorageService.listParts`).
 
 ### SI-03.18 — Endpoint GET /videos/:id (status do dono)
 - **Status:** pending

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -209,5 +210,37 @@ export class VideosController {
     @Body() dto: CompleteUploadDto,
   ): Promise<VideoResponseDto> {
     return this.videosService.completeUpload(user.sub, id, dto);
+  }
+
+  @Delete(':id/upload')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Abort the upload',
+    description:
+      'Aborts the multipart upload in the object storage and deletes the draft owned by the caller.',
+  })
+  @ApiParam({ name: 'id', description: 'Public id of the video' })
+  @ApiResponse({ status: 204, description: 'Upload aborted and draft deleted' })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found or owned by another channel',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is no longer a draft',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async abortUpload(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ): Promise<void> {
+    await this.videosService.abortUpload(user.sub, id);
   }
 }
