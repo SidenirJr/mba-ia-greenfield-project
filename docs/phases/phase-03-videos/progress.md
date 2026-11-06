@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 10/31 completed
+**SIs:** 11/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -90,9 +90,13 @@
   - O teste de integração verifica o multipart aberto de verdade com `listParts` (vazio) no bucket de teste dedicado; a falha do storage é simulada com `jest.spyOn` sobre o `StorageService` real para validar a remoção real da linha.
 
 ### SI-03.11 — VideosService: URLs por parte e listagem de partes (retomada)
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 15 novos passing (unit 10 em videos.service.spec, integration 5 em videos.service.integration-spec com DB e storage reais); src/videos 55/55; tsc exit 0; lint exit 0
+- **Observations:**
+  - DTOs: `PartUrlsDto` (validação com `@ArrayNotEmpty`/`@ArrayMaxSize(MAX_PARTS)`/`@IsInt({ each })`/`@Min(1, { each })`, conferido no context7 `/typestack/class-validator`), `PartUrlsResponseDto` e `UploadedPartsResponseDto` (com DTOs aninhados `PartUrlDto`/`UploadedPartDto`) em arquivos separados, por convenção de um DTO principal por arquivo.
+  - `VideosService` ganhou a injeção de `storageConfig.KEY` (para `expires_in = presignExpiresSeconds`); o spec de integração passou a sobrescrever `uploadConfig.KEY` com um objeto mutável para usar partes de 5 MiB só nos testes de partes reais (o teste de 10 GiB / 160 partes do SI-03.10 segue com 64 MiB).
+  - `getOwnedDraft(userId, publicId, { requireValid })`: `requireValid = false` será usado pelo `abortUpload` (SI-03.12). Um rascunho com `upload_expires_at` nulo é tratado como expirado.
+  - Os números de parte são deduplicados e devolvidos em ordem crescente.
 
 ### SI-03.12 — VideosService: completar (HeadObject, transição e enqueue) e abortar upload
 - **Status:** pending

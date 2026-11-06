@@ -1,9 +1,15 @@
+import type { ConfigType } from '@nestjs/config';
+import storageConfig from '../config/storage.config';
 import { Channel } from '../channels/entities/channel.entity';
 import { ChannelsService } from '../channels/channels.service';
 import {
   ChannelNotFoundException,
   InvalidContentTypeException,
+  InvalidPartNumberException,
+  UploadExpiredException,
   UploadSizeExceedsLimitException,
+  VideoNotFoundException,
+  VideoNotInDraftException,
 } from '../common/exceptions/domain.exception';
 import { StorageService } from '../storage/storage.service';
 import { Video } from './entities/video.entity';
@@ -16,14 +22,20 @@ const config = {
   partSizeBytes: 67108864,
   expirationHours: 24,
 };
+const storageSettings = { presignExpiresSeconds: 900 };
 
 describe('VideosService', () => {
   let repository: {
     createDraft: jest.Mock;
     setUploadId: jest.Mock;
     deleteDraft: jest.Mock;
+    findOwnedByPublicId: jest.Mock;
   };
-  let storage: { createMultipartUpload: jest.Mock };
+  let storage: {
+    createMultipartUpload: jest.Mock;
+    presignUploadPart: jest.Mock;
+    listParts: jest.Mock;
+  };
   let channels: { getByUserId: jest.Mock };
   let service: VideosService;
 
@@ -42,8 +54,16 @@ describe('VideosService', () => {
       } as Video),
       setUploadId: jest.fn().mockResolvedValue(undefined),
       deleteDraft: jest.fn().mockResolvedValue(1),
+      findOwnedByPublicId: jest.fn().mockResolvedValue(null),
     };
-    storage = { createMultipartUpload: jest.fn().mockResolvedValue('up-1') };
+    storage = {
+      createMultipartUpload: jest.fn().mockResolvedValue('up-1'),
+      presignUploadPart: jest.fn(
+        (_key: string, _uploadId: string, partNumber: number) =>
+          Promise.resolve(`https://storage/part-${partNumber}`),
+      ),
+      listParts: jest.fn().mockResolvedValue([]),
+    };
     channels = {
       getByUserId: jest.fn().mockResolvedValue({ id: 'channel-1' } as Channel),
     };
@@ -52,6 +72,7 @@ describe('VideosService', () => {
       storage as unknown as StorageService,
       channels as unknown as ChannelsService,
       config,
+      storageSettings as ConfigType<typeof storageConfig>,
     );
   });
 
@@ -135,6 +156,124 @@ describe('VideosService', () => {
 
       expect(repository.deleteDraft).toHaveBeenCalledWith('video-uuid');
       expect(repository.setUploadId).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('owned draft access (part-urls / listParts)', () => {
+    const draft = (overrides: Partial<Video> = {}): Video =>
+      ({
+        id: 'video-uuid',
+        public_id: 'abcdefghijk',
+        status: VideoStatus.DRAFT,
+        part_size: 5242880,
+        part_count: 3,
+        upload_id: 'up-1',
+        upload_expires_at: new Date(Date.now() + 3600_000),
+        ...overrides,
+      }) as Video;
+
+    const callers: [string, () => Promise<unknown>][] = [
+      ['getPartUrls', () => service.getPartUrls('user-1', 'abcdefghijk', [1])],
+      [
+        'listUploadedParts',
+        () => service.listUploadedParts('user-1', 'abcdefghijk'),
+      ],
+    ];
+
+    describe.each(callers)('%s', (_name, call) => {
+      it('throws VideoNotFoundException when the video is missing or owned by another channel', async () => {
+        repository.findOwnedByPublicId.mockResolvedValue(null);
+
+        await expect(call()).rejects.toBeInstanceOf(VideoNotFoundException);
+        expect(repository.findOwnedByPublicId).toHaveBeenCalledWith(
+          'abcdefghijk',
+          'channel-1',
+        );
+      });
+
+      it('throws VideoNotInDraftException when the video left draft', async () => {
+        repository.findOwnedByPublicId.mockResolvedValue(
+          draft({ status: VideoStatus.PROCESSING }),
+        );
+
+        await expect(call()).rejects.toBeInstanceOf(VideoNotInDraftException);
+      });
+
+      it('throws UploadExpiredException when the draft deadline has passed', async () => {
+        repository.findOwnedByPublicId.mockResolvedValue(
+          draft({ upload_expires_at: new Date(Date.now() - 1000) }),
+        );
+
+        await expect(call()).rejects.toBeInstanceOf(UploadExpiredException);
+      });
+    });
+
+    describe('getPartUrls', () => {
+      it('signs each requested part once, ascending, with the configured expiry', async () => {
+        repository.findOwnedByPublicId.mockResolvedValue(draft());
+
+        const result = await service.getPartUrls(
+          'user-1',
+          'abcdefghijk',
+          [2, 1, 2],
+        );
+
+        expect(result).toEqual({
+          parts: [
+            { part_number: 1, url: 'https://storage/part-1' },
+            { part_number: 2, url: 'https://storage/part-2' },
+          ],
+          expires_in: 900,
+        });
+        expect(storage.presignUploadPart).toHaveBeenCalledTimes(2);
+        expect(storage.presignUploadPart).toHaveBeenCalledWith(
+          'videos/video-uuid/original',
+          'up-1',
+          1,
+        );
+      });
+
+      it('rejects a part number above part_count without signing anything', async () => {
+        repository.findOwnedByPublicId.mockResolvedValue(draft());
+
+        await expect(
+          service.getPartUrls('user-1', 'abcdefghijk', [1, 4]),
+        ).rejects.toBeInstanceOf(InvalidPartNumberException);
+        expect(storage.presignUploadPart).not.toHaveBeenCalled();
+      });
+
+      it('accepts a part number equal to part_count', async () => {
+        repository.findOwnedByPublicId.mockResolvedValue(draft());
+
+        const result = await service.getPartUrls('user-1', 'abcdefghijk', [3]);
+
+        expect(result.parts).toHaveLength(1);
+      });
+    });
+
+    describe('listUploadedParts', () => {
+      it('maps and sorts the stored parts and echoes the part plan', async () => {
+        repository.findOwnedByPublicId.mockResolvedValue(draft());
+        storage.listParts.mockResolvedValue([
+          { partNumber: 2, etag: '"b"', size: 10 },
+          { partNumber: 1, etag: '"a"', size: 5242880 },
+        ]);
+
+        const result = await service.listUploadedParts('user-1', 'abcdefghijk');
+
+        expect(storage.listParts).toHaveBeenCalledWith(
+          'videos/video-uuid/original',
+          'up-1',
+        );
+        expect(result).toEqual({
+          part_size: 5242880,
+          part_count: 3,
+          parts: [
+            { part_number: 1, size: 5242880, etag: '"a"' },
+            { part_number: 2, size: 10, etag: '"b"' },
+          ],
+        });
+      });
     });
   });
 });
