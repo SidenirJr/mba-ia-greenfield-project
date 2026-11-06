@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 25/31 completed
+**SIs:** 26/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -218,9 +218,12 @@
   - `start:dev` não foi iniciado (regra do projeto); a ausência de conflito foi verificada pelo `build` e pelo `exclude`.
 
 ### SI-03.26 — VideoDeliveryService: URLs pré-assinadas de streaming e download
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 21 novos passing (content-disposition.util.spec 6, video-delivery.service.spec 6 com `it.each`, video-delivery.service.integration-spec 9 com DB e storage reais); videos.module.spec 1/1; tsc exit 0; lint exit 0
+- **Observations:**
+  - A integração segue a URL pré-assinada de verdade com `requestPresignedUrl` (host override, helper do spike do SI-03.1): `200` com `Content-Type` do vídeo mesmo com o objeto salvo como `octet-stream` (prova do `ResponseContentType`), `206` com `Content-Range: bytes 0-99/1000` e `Accept-Ranges: bytes`, e `Content-Disposition: attachment` emitido pelo storage; o nome malicioso (aspas, CRLF) vira header sem essas sequências e sem header injetado.
+  - `buildAttachmentDisposition` também remove controles Unicode e surrogates solitários (que fariam `encodeURIComponent` lançar `URIError`), codifica `' ( ) *` no `filename*` (RFC 5987) e cai no nome `video` se nada utilizável restar (o plano não define o fallback).
+  - O stream também força `ResponseContentType` (TD-08); o download usa o mesmo `content_type` além do `Content-Disposition`.
 
 ### SI-03.27 — Endpoint GET /videos/:id/stream (redirect 302 para URL pré-assinada)
 - **Status:** pending
