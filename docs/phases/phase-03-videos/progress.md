@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 22/31 completed
+**SIs:** 23/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -190,9 +190,14 @@
   - `VideoProcessingService` só conhece `VideoPipelineService` (nunca o repositório); o spec de integração monta o módulo com `VideosModule`, `StorageModule` e `MediaModule` (o `WorkerModule` do SI-03.23 importará os mesmos).
 
 ### SI-03.23 — WorkerModule e VideoProcessingProcessor (retries, backoff e falha final)
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 17 novos passing (video-processing.processor.spec 11 unit; video-processing.processor.integration-spec 6 com WorkerModule in-process e Redis/DB/storage/ffmpeg reais, 4 execuções seguidas estáveis); app.e2e 1/1; tsc exit 0; lint exit 0
+- **Observations:**
+  - `@Processor` só existe em `VideoProcessingProcessor` provido no `WorkerModule`; o spec de integração prova que o `AppModule` sobe com 0 consumidores em `video-processing` (`queue.getWorkers()`), enquanto o `WorkerModule` sobe com 1.
+  - **Extração (consequência de "mesmos namespaces e Joi do AppModule"):** a configuração do `ConfigModule` e do `TypeOrmModule.forRootAsync` foi movida para `src/config/infra-module-options.ts` e é usada por `AppModule` e `WorkerModule` para os dois processos não divergirem; sem mudança de comportamento no `AppModule` (app.e2e 1/1).
+  - Retries e falha final testados de verdade: original ausente no storage faz o ffprobe receber 404 (TRANSIENT real); o job é enfileirado com `attempts: 3` e backoff exponencial de 50 ms só nesse teste (o default de 30 s do `QueueModule` não muda), `attemptsMade = 3` e vídeo `error`/`PROCESSING_FAILED`. Corrompido: `attemptsMade = 1`, vídeo `UNREADABLE_MEDIA` (o handler `failed` também dispara por `UnrecoverableError`, mas `markError` é guardado e não sobrescreve o código de conteúdo).
+  - O handler `failed` captura e loga falha do `markError` (contexto de background; o sweeper do SI-03.24 reenfileira o `processing` esquecido). Mensagem gravada passa por `sanitizeSignedUrls`.
+  - Concurrency do worker fica no default do BullMQ (1); o plano não define outro valor. O entrypoint `src/worker.ts`/shutdown hooks e o serviço Compose são do SI-03.25.
 
 ### SI-03.24 — Sweeper: job scheduler de rascunhos vencidos e reconciliação de processing
 - **Status:** pending

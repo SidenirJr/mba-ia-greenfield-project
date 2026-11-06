@@ -1,53 +1,20 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigType } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { VideosModule } from './videos/videos.module';
-import appConfig from './config/app.config';
-import authConfig from './config/auth.config';
-import databaseConfig from './config/database.config';
-import mailConfig from './config/mail.config';
-import redisConfig from './config/redis.config';
-import storageConfig from './config/storage.config';
-import uploadConfig from './config/upload.config';
-import workerConfig from './config/worker.config';
-import swaggerConfig from './config/swagger.config';
-import { envValidationSchema } from './config/env.validation';
+import {
+  configModuleOptions,
+  typeOrmAsyncOptions,
+} from './config/infra-module-options';
 
+// Só o lado produtor da fila (via VideosModule → QueueModule): o WorkerModule, único com @Processor, nunca é importado aqui (TD-05).
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-      load: [
-        appConfig,
-        authConfig,
-        databaseConfig,
-        mailConfig,
-        swaggerConfig,
-        storageConfig,
-        redisConfig,
-        uploadConfig,
-        workerConfig,
-      ],
-      validationSchema: envValidationSchema,
-      validationOptions: { allowUnknown: true, abortEarly: false },
-    }),
-    TypeOrmModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [databaseConfig.KEY],
-      useFactory: (dbConfig: ConfigType<typeof databaseConfig>) => ({
-        type: 'postgres',
-        host: dbConfig.host,
-        port: dbConfig.port,
-        username: dbConfig.username,
-        password: dbConfig.password,
-        database: dbConfig.name,
-        autoLoadEntities: true,
-        synchronize: false,
-      }),
-    }),
+    ConfigModule.forRoot(configModuleOptions),
+    TypeOrmModule.forRootAsync(typeOrmAsyncOptions),
     AuthModule,
     VideosModule,
   ],
