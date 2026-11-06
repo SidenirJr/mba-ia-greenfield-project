@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 9/31 completed
+**SIs:** 10/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -81,9 +81,13 @@
   - `QueueModule` ainda não é importado por `AppModule`/`VideosModule` (o plano o liga no SI-03.12, quando `VideosService` precisar do produtor). O worker temporário dos testes (failed/completed) é criado só no spec.
 
 ### SI-03.10 — Iniciar upload: planejador de partes e VideosService.initiateUpload
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 16 novos passing (upload-part-planner.spec 5, videos.service.spec 6, videos.service.integration-spec 5 com DB e storage reais); src/videos 40/40; e2e 52/52; tsc exit 0; lint exit 0
+- **Observations:** 
+  - `VideosModule` passou a importar `StorageModule` e `ChannelsModule`; por isso `videos.module.spec.ts` e `videos.repository.integration-spec.ts` ganharam `ConfigModule.forRoot({ isGlobal, load: [storageConfig, uploadConfig] })` (consequência direta, sem mudança de comportamento).
+  - O multipart é aberto com a chave `videoOriginalKey(video.id)` (uuid interno); a resposta expõe `public_id` como `id`. A ordem de validação é content-type, tamanho, canal, para não consultar o banco em requisições inválidas.
+  - A compensação (`deleteDraft`) cobre `createMultipartUpload` e `setUploadId`; se `setUploadId` falhar depois do multipart aberto, o multipart fica órfão no storage (sem rascunho para o sweeper); risco raro, não tratado neste SI.
+  - O teste de integração verifica o multipart aberto de verdade com `listParts` (vazio) no bucket de teste dedicado; a falha do storage é simulada com `jest.spyOn` sobre o `StorageService` real para validar a remoção real da linha.
 
 ### SI-03.11 — VideosService: URLs por parte e listagem de partes (retomada)
 - **Status:** pending

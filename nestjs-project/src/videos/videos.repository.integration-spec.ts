@@ -1,9 +1,12 @@
+import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError } from 'typeorm';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
 import { VerificationToken } from '../auth/entities/verification-token.entity';
 import { Channel } from '../channels/entities/channel.entity';
+import storageConfig from '../config/storage.config';
+import uploadConfig from '../config/upload.config';
 import {
   cleanAllTables,
   createTestDataSource,
@@ -37,6 +40,10 @@ describe('VideosRepository (integration)', () => {
   beforeAll(async () => {
     moduleRef = await Test.createTestingModule({
       imports: [
+        ConfigModule.forRoot({
+          isGlobal: true,
+          load: [storageConfig, uploadConfig],
+        }),
         TypeOrmModule.forRoot(createTestDataSource(ALL_ENTITIES).options),
         VideosModule,
       ],
