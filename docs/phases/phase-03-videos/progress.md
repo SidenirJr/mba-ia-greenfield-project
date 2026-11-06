@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 27/31 completed
+**SIs:** 28/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -234,9 +234,11 @@
   - `VideosController` ganhou a injeção de `VideoDeliveryService`; o `@ApiBearerAuth` não aparece nesta rota (o decorator já era por handler desde o SI-03.14).
 
 ### SI-03.28 — Endpoint GET /videos/:id/download (redirect 302 com Content-Disposition)
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 3 e2e passing em test/videos-download.e2e-spec.ts (spec videos-download.plan.md, AppModule real com DB e storage reais); tsc exit 0; lint exit 0
+- **Observations:**
+  - O cenário 1.2 segue o `Location` de verdade com `requestPresignedUrl` (host override): `200` com `Content-Disposition: attachment; filename="meu video.mp4"` emitido pelo storage; a API só responde o `302` (`@Public()` + `@Redirect()`).
+  - O `Last sync` do spec não foi alterado (a skill não manda).
 
 ### SI-03.29 — Pipeline ponta a ponta: upload multipart, processamento in-process e streaming
 - **Status:** pending

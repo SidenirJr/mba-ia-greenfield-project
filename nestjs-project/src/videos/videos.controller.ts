@@ -310,4 +310,36 @@ export class VideosController {
     const url = await this.videoDeliveryService.getStreamUrl(id);
     return { url, statusCode: HttpStatus.FOUND };
   }
+
+  @Public()
+  @Get(':id/download')
+  @Redirect()
+  @ApiOperation({
+    summary: 'Download a video',
+    description:
+      'Public. Redirects (302) to a short-lived presigned URL of the object storage that forces Content-Disposition: attachment with the original file name. Only ready videos are available.',
+  })
+  @ApiParam({ name: 'id', description: 'Public id of the video' })
+  @ApiResponse({
+    status: 302,
+    description: 'Redirect to the presigned storage URL',
+    headers: {
+      Location: {
+        description:
+          'Presigned GET URL on the public storage endpoint with response-content-disposition=attachment',
+        schema: { type: 'string' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found or not ready',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async downloadVideo(
+    @Param('id') id: string,
+  ): Promise<{ url: string; statusCode: number }> {
+    const url = await this.videoDeliveryService.getDownloadUrl(id);
+    return { url, statusCode: HttpStatus.FOUND };
+  }
 }
