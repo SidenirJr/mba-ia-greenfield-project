@@ -18,11 +18,13 @@ import {
 import type { JwtPayload } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ApiErrorEnvelope } from '../common/openapi/api-error-envelope.dto';
+import { CompleteUploadDto } from './dto/complete-upload.dto';
 import { InitiateUploadResponseDto } from './dto/initiate-upload-response.dto';
 import { InitiateUploadDto } from './dto/initiate-upload.dto';
 import { PartUrlsResponseDto } from './dto/part-urls-response.dto';
 import { PartUrlsDto } from './dto/part-urls.dto';
 import { UploadedPartsResponseDto } from './dto/uploaded-parts-response.dto';
+import { VideoResponseDto } from './dto/video-response.dto';
 import { VideosService } from './videos.service';
 
 @ApiTags('videos')
@@ -160,5 +162,52 @@ export class VideosController {
     @Param('id') id: string,
   ): Promise<UploadedPartsResponseDto> {
     return this.videosService.listUploadedParts(user.sub, id);
+  }
+
+  @Post(':id/upload/complete')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Complete the upload',
+    description:
+      'Finalizes the multipart upload, verifies the stored object size, moves the video to processing and enqueues the processing job.',
+  })
+  @ApiParam({ name: 'id', description: 'Public id of the video' })
+  @ApiResponse({
+    status: 202,
+    description: 'Upload completed; the video is being processed',
+    type: VideoResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation failed or the storage rejected the part list',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found or owned by another channel',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is no longer a draft or the uploaded size mismatches',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 410,
+    description: 'Upload has expired',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async completeUpload(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: CompleteUploadDto,
+  ): Promise<VideoResponseDto> {
+    return this.videosService.completeUpload(user.sub, id, dto);
   }
 }

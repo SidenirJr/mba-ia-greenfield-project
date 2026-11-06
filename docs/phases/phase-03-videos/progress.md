@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 15/31 completed
+**SIs:** 16/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -132,9 +132,12 @@
   - O `Last sync` do spec não foi alterado (a skill não manda).
 
 ### SI-03.16 — Endpoint POST /videos/:id/upload/complete
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 8 e2e passing em test/videos-complete-upload.e2e-spec.ts (spec videos-complete-upload.plan.md); tsc exit 0; lint exit 0
+- **Observations:** 
+  - **Desvio (dependência de spec):** o spec manda usar `generateMultipartVideo()` (SI-03.19) e `GET /videos/:id` (SI-03.18), ambos posteriores na ordem de execução e fora das dependências declaradas do SI-03.16. O e2e usa um `Buffer` de 6 MiB (o worker não roda nele, o conteúdo não importa) e confere o `error` do cenário 1.5 direto na linha do banco; os dois pontos serão alinhados ao spec nos SIs 03.18/03.19.
+  - Os PUTs enviam bytes reais ao storage (5 MiB + 1 MiB); o cenário de divergência de tamanho envia 1 KiB a menos que o declarado e verifica `status = error`/`error_code = UPLOAD_SIZE_MISMATCH`.
+  - Registrado do SI-03.12 e não alterado: um `complete` concorrente pode virar 400 `INVALID_UPLOAD_PARTS` (NoSuchUpload) em vez de 409, consequência do mapeamento exigido pelo plano.
 
 ### SI-03.17 — Endpoint DELETE /videos/:id/upload (abortar)
 - **Status:** pending
