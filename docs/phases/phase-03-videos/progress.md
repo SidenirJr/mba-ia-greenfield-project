@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 18/31 completed
+**SIs:** 19/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -135,7 +135,7 @@
 - **Status:** completed
 - **Tests:** 8 e2e passing em test/videos-complete-upload.e2e-spec.ts (spec videos-complete-upload.plan.md); tsc exit 0; lint exit 0
 - **Observations:** 
-  - **Desvio (dependência de spec):** o spec manda usar `generateMultipartVideo()` (SI-03.19) e `GET /videos/:id` (SI-03.18), ambos posteriores na ordem de execução e fora das dependências declaradas do SI-03.16. O e2e usa um `Buffer` de 6 MiB (o worker não roda nele, o conteúdo não importa); o passo 2 do cenário 1.5 foi alinhado ao spec (GET /videos/:id) no SI-03.18, e a troca pelo `generateMultipartVideo()` fica para o SI-03.19.
+  - **Desvio (dependência de spec):** o spec manda usar `generateMultipartVideo()` (SI-03.19) e `GET /videos/:id` (SI-03.18), ambos posteriores na ordem de execução e fora das dependências declaradas do SI-03.16. O e2e usa um `Buffer` de 6 MiB (o worker não roda nele, o conteúdo não importa); o passo 2 do cenário 1.5 foi alinhado ao spec (GET /videos/:id) no SI-03.18, e a troca pelo `generateMultipartVideo()` foi feita no SI-03.19 (e2e 8/8 mantido).
   - Os PUTs enviam bytes reais ao storage (5 MiB + 1 MiB); o cenário de divergência de tamanho envia 1 KiB a menos que o declarado e verifica `status = error`/`error_code = UPLOAD_SIZE_MISMATCH`.
   - Registrado do SI-03.12 e não alterado: um `complete` concorrente pode virar 400 `INVALID_UPLOAD_PARTS` (NoSuchUpload) em vez de 409, consequência do mapeamento exigido pelo plano.
 
@@ -155,9 +155,13 @@
   - Alinhei os e2e dos SIs 03.16 (cenário 1.5) e 03.17 (cenário 1.1) ao spec, passando a usar `GET /videos/:id` agora que ele existe; `test/videos-*` 35/35.
 
 ### SI-03.19 — Helper de testes: fixtures de vídeo geradas com ffmpeg lavfi
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 5 novos passing em src/test/video-fixtures.integration-spec.ts (ffmpeg/ffprobe reais); e2e videos-complete-upload 8/8 com a fixture real; tsc exit 0; lint exit 0
+- **Observations:** 
+  - Fixtures em `os.tmpdir()` (`mkdtemp`), removidas por `cleanupFixtures()`; nenhum binário entra no repositório (`git status` limpo após o spec).
+  - `generateSampleVideo` aceita `durationSeconds`/`faststart`/`minBytes`; com `minBytes` usa `testsrc2` 640x360 com filtro `noise` (incompressível, ~3 MB/s em libx264 crf 23) e realonga a duração até atingir o mínimo (comentário `shortcut:`). `generateMultipartVideo()` fica entre 6 e 10 MiB (2 partes de 5 MiB), verificado no spec.
+  - O não-faststart é o padrão do muxer mp4 (moov no fim); o spec percorre os átomos de topo para provar a ordem moov/mdat. Áudio-only: AAC em mp4 via `sine`; corrompido: 4 KiB de bytes aleatórios.
+  - O e2e do SI-03.16 passou a usar `generateMultipartVideo()` (alinhamento com o spec).
 
 ### SI-03.20 — MediaToolsService: ffprobe e ffmpeg via child_process
 - **Status:** pending

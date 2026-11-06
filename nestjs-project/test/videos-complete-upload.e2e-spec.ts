@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import request from 'supertest';
 import {
   createVideosE2eApp,
@@ -6,6 +7,10 @@ import {
   type VideosE2eApp,
 } from '../src/test/videos-e2e-app';
 import { requestPresignedUrl } from '../src/test/storage-test';
+import {
+  cleanupFixtures,
+  generateMultipartVideo,
+} from '../src/test/video-fixtures';
 import { Video } from '../src/videos/entities/video.entity';
 import { VideoStatus } from '../src/videos/videos.constants';
 
@@ -28,19 +33,18 @@ interface UploadedPart {
   etag: string;
 }
 
-const FILE_BYTES = 6291456; // 2 partes: 5 MiB + 1 MiB
-
 describe('videos-complete-upload', () => {
   let ctx: VideosE2eApp;
   let ownerToken: string;
   let otherToken: string;
+  let file: Buffer; // vídeo real de ≥ 6 MiB: 2 partes de 5 MiB
 
   const post = (path: string, token?: string) => {
     const req = request(ctx.app.getHttpServer()).post(path);
     return token ? req.set('Authorization', `Bearer ${token}`) : req;
   };
 
-  const initiate = async (sizeBytes = FILE_BYTES): Promise<string> => {
+  const initiate = async (sizeBytes = file.length): Promise<string> => {
     const res = await post('/videos', ownerToken)
       .send({
         file_name: 'sample.mp4',
@@ -54,7 +58,7 @@ describe('videos-complete-upload', () => {
   // Obtém as URLs por parte e faz o PUT real no storage, devolvendo os ETags.
   const uploadAllParts = async (
     videoId: string,
-    fileBytes = FILE_BYTES,
+    content = file,
   ): Promise<UploadedPart[]> => {
     const urls = await post(`/videos/${videoId}/upload/part-urls`, ownerToken)
       .send({ part_numbers: [1, 2] })
@@ -64,13 +68,10 @@ describe('videos-complete-upload', () => {
     ).parts;
     const uploaded: UploadedPart[] = [];
     for (const { part_number, url } of parts) {
-      const size =
-        part_number === 1
-          ? E2E_PART_SIZE_BYTES
-          : fileBytes - E2E_PART_SIZE_BYTES;
+      const start = (part_number - 1) * E2E_PART_SIZE_BYTES;
       const put = await requestPresignedUrl(url, {
         method: 'PUT',
-        body: Buffer.alloc(size, part_number),
+        body: content.subarray(start, start + E2E_PART_SIZE_BYTES),
       });
       expect(put.status).toBe(200);
       uploaded.push({ part_number, etag: put.headers.etag as string });
@@ -85,9 +86,11 @@ describe('videos-complete-upload', () => {
 
   beforeAll(async () => {
     ctx = await createVideosE2eApp();
+    file = await readFile(await generateMultipartVideo());
   });
 
   afterAll(async () => {
+    await cleanupFixtures();
     await ctx.close();
   });
 
@@ -173,8 +176,8 @@ describe('videos-complete-upload', () => {
 
   it('size-mismatch-returns-409-and-marks-error', async () => {
     const videoId = await initiate();
-    // Declara 6 MiB (2 partes) mas envia 1 KiB a menos na última parte.
-    const parts = await uploadAllParts(videoId, FILE_BYTES - 1024);
+    // Declara o tamanho real do arquivo mas envia 1 KiB a menos na última parte.
+    const parts = await uploadAllParts(videoId, file.subarray(0, -1024));
 
     const res = await post(`/videos/${videoId}/upload/complete`, ownerToken)
       .send({ parts })
