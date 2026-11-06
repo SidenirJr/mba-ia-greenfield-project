@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 26/31 completed
+**SIs:** 27/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -226,9 +226,12 @@
   - O stream também força `ResponseContentType` (TD-08); o download usa o mesmo `content_type` além do `Content-Disposition`.
 
 ### SI-03.27 — Endpoint GET /videos/:id/stream (redirect 302 para URL pré-assinada)
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 3 e2e passing em test/videos-stream.e2e-spec.ts (spec videos-stream.plan.md, AppModule real com DB e storage reais); tsc exit 0; lint exit 0
+- **Observations:**
+  - O cenário do `206` segue o `Location` de verdade com `requestPresignedUrl` (host override do spike do SI-03.1): `Content-Range: bytes 0-99/...`, `Accept-Ranges` e `Content-Type: video/mp4` vêm do storage; a API só responde o `302` (`@Public()` + `@Redirect()` devolvendo `{ url, statusCode }`).
+  - Os vídeos `ready` são semeados por insert + objeto real (`generateSampleVideo`) no bucket de teste; `draft`/`processing`/`error` por insert direto. O `Last sync` do spec não foi alterado (a skill não manda).
+  - `VideosController` ganhou a injeção de `VideoDeliveryService`; o `@ApiBearerAuth` não aparece nesta rota (o decorator já era por handler desde o SI-03.14).
 
 ### SI-03.28 — Endpoint GET /videos/:id/download (redirect 302 com Content-Disposition)
 - **Status:** pending

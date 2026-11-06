@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Redirect,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -18,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 import type { JwtPayload } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { ApiErrorEnvelope } from '../common/openapi/api-error-envelope.dto';
 import { CompleteUploadDto } from './dto/complete-upload.dto';
 import { InitiateUploadResponseDto } from './dto/initiate-upload-response.dto';
@@ -26,12 +28,16 @@ import { PartUrlsResponseDto } from './dto/part-urls-response.dto';
 import { PartUrlsDto } from './dto/part-urls.dto';
 import { UploadedPartsResponseDto } from './dto/uploaded-parts-response.dto';
 import { VideoResponseDto } from './dto/video-response.dto';
+import { VideoDeliveryService } from './video-delivery.service';
 import { VideosService } from './videos.service';
 
 @ApiTags('videos')
 @Controller('videos')
 export class VideosController {
-  constructor(private readonly videosService: VideosService) {}
+  constructor(
+    private readonly videosService: VideosService,
+    private readonly videoDeliveryService: VideoDeliveryService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -272,5 +278,36 @@ export class VideosController {
     @Param('id') id: string,
   ): Promise<VideoResponseDto> {
     return this.videosService.getOwnedVideo(user.sub, id);
+  }
+
+  @Public()
+  @Get(':id/stream')
+  @Redirect()
+  @ApiOperation({
+    summary: 'Stream a video',
+    description:
+      'Public. Redirects (302) to a short-lived presigned URL of the object storage, which answers Range requests with 206 Partial Content. Only ready videos are available.',
+  })
+  @ApiParam({ name: 'id', description: 'Public id of the video' })
+  @ApiResponse({
+    status: 302,
+    description: 'Redirect to the presigned storage URL',
+    headers: {
+      Location: {
+        description: 'Presigned GET URL on the public storage endpoint',
+        schema: { type: 'string' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found or not ready',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async streamVideo(
+    @Param('id') id: string,
+  ): Promise<{ url: string; statusCode: number }> {
+    const url = await this.videoDeliveryService.getStreamUrl(id);
+    return { url, statusCode: HttpStatus.FOUND };
   }
 }
