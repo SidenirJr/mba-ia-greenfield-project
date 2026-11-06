@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -21,6 +22,7 @@ import { InitiateUploadResponseDto } from './dto/initiate-upload-response.dto';
 import { InitiateUploadDto } from './dto/initiate-upload.dto';
 import { PartUrlsResponseDto } from './dto/part-urls-response.dto';
 import { PartUrlsDto } from './dto/part-urls.dto';
+import { UploadedPartsResponseDto } from './dto/uploaded-parts-response.dto';
 import { VideosService } from './videos.service';
 
 @ApiTags('videos')
@@ -118,5 +120,45 @@ export class VideosController {
     @Body() dto: PartUrlsDto,
   ): Promise<PartUrlsResponseDto> {
     return this.videosService.getPartUrls(user.sub, id, dto.part_numbers);
+  }
+
+  @Get(':id/upload/parts')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'List the uploaded parts',
+    description:
+      'Lists the parts already stored in the object storage for a draft owned by the caller, so the client can resume an interrupted upload.',
+  })
+  @ApiParam({ name: 'id', description: 'Public id of the video' })
+  @ApiResponse({
+    status: 200,
+    description: 'Part plan and the parts already stored',
+    type: UploadedPartsResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found or owned by another channel',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is no longer a draft',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 410,
+    description: 'Upload has expired',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async listUploadedParts(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ): Promise<UploadedPartsResponseDto> {
+    return this.videosService.listUploadedParts(user.sub, id);
   }
 }

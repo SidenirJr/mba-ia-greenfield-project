@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 14/31 completed
+**SIs:** 15/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -125,9 +125,11 @@
   - O controller passa `dto.part_numbers` ao serviço; o `Last sync` do spec não foi alterado (a skill não manda).
 
 ### SI-03.15 — Endpoint GET /videos/:id/upload/parts (retomada)
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 6 e2e passing em test/videos-list-parts.e2e-spec.ts (spec videos-list-parts.plan.md); tsc exit 0; lint exit 0
+- **Observations:** 
+  - O controller só delega a `listUploadedParts`; o e2e envia 5 MiB reais ao storage por URL pré-assinada e confere o ETag devolvido pelo PUT contra o listado.
+  - O `Last sync` do spec não foi alterado (a skill não manda).
 
 ### SI-03.16 — Endpoint POST /videos/:id/upload/complete
 - **Status:** pending
