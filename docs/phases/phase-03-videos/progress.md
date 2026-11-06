@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 19/31 completed
+**SIs:** 20/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -164,9 +164,13 @@
   - O e2e do SI-03.16 passou a usar `generateMultipartVideo()` (alinhamento com o spec).
 
 ### SI-03.20 — MediaToolsService: ffprobe e ffmpeg via child_process
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 28 novos passing (media-probe.mapper.spec 18 unit, media-tools.service.integration-spec 10 com ffmpeg/ffprobe e storage reais); tsc exit 0; lint exit 0
+- **Observations:**
+  - Sem `fluent-ffmpeg`: `execFile` direto com `FFMPEG_TIMEOUT_MS` (SIGKILL no timeout, tratado como TRANSIENT retryable); o erro cru do `execFile` nunca é propagado (traz a linha de comando com a URL assinada), só o stderr sanitizado (`[redacted-url]`).
+  - Classificação por regex no stderr (comentário `shortcut:`): dados inválidos (`Invalid data found`, `moov atom not found` etc.) → não-retryable (`UNREADABLE_MEDIA` no probe, `THUMBNAIL_FAILED` na thumbnail); qualquer outra falha (HTTP 4xx/5xx, conexão, I/O, timeout, binário ausente) → `TRANSIENT` retryable (limitado pelas 3 tentativas do BullMQ). Duração ausente/inválida → `UNREADABLE_MEDIA` (ready exige duração).
+  - Thumbnail: um seek exatamente no fim da mídia (vídeo de 0,5 s: `min(max(0.05,1),0.5)=0.5`) não decodifica frame; `extractThumbnail` refaz em t=0 antes de falhar com `THUMBNAIL_FAILED` (`thumbnailSeekSeconds` segue exatamente a fórmula do plano).
+  - O `metadata` guarda `{ format, streams[] }` aparado por allow-list de chaves, sem `format.filename` e com varredura final de URLs; o timeout é testado com servidor HTTP local que nunca responde (determinístico).
 
 ### SI-03.21 — VideoPipelineService: transições de processamento e limpeza para worker e sweeper
 - **Status:** pending
