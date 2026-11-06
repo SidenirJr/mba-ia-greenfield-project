@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 6/31 completed
+**SIs:** 7/31 completed
 
 ### SI-03.1 — Spike: storage S3-compatível (pgsty/silo + pgsty/mc) no Compose e contrato S3
 - **Status:** completed
@@ -59,9 +59,10 @@
   - `VideosModule` agora provê e exporta `VideosRepository` (além de `TypeOrmModule`).
 
 ### SI-03.7 — Exceções de domínio de vídeos e mapeamento no filtro existente
-- **Status:** pending
-- **Tests:** pending
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 9 novos passing em src/common/filters/domain-exception.filter.spec.ts (17 no diretório, via describe.each); tsc exit 0; lint exit 0
+- **Observations:** 
+  - Mensagens e códigos/status conforme o Error Catalog; nenhuma alteração no código do filtro.
 
 ### SI-03.8 — ChannelsService: resolver o canal do usuário autenticado
 - **Status:** pending
